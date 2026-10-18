@@ -1,0 +1,3 @@
+code,name,format,media_type,status,lat,lon,address,city,road_name,road_type,facing_azimuth,visibility_m,width_m,height_m,faces,illuminated,currency,price_week,price_month,price_year,installed_at,permit_number,permit_expires_at,landlord,energy_kwh_month
+NEW-001,Viale Monza 6x3,poster_6x3,static,available,45.4950,9.2190,Viale Monza 120,Milano,Viale Monza,arterial,20,150,6,3,1,1,EUR,250,900,9500,2022-03-01,MI-PUB-2022-1234,2027-03-01,Condominio Monza 120,
+NEW-002,Porta Venezia LED,digital_billboard,digital,available,45.4747,9.2050,Piazza Oberdan,Milano,Corso Buenos Aires,urban,200,200,6,3,1,1,EUR,1100,4200,45000,2024-05-10,MI-PUB-2024-0042,2029-05-10,Comune di Milano,850

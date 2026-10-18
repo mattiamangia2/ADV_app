@@ -1,0 +1,17 @@
+{
+  "name": "adv-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Out-of-home advertising intelligence: map vehicle mobility, cross it with billboard inventory, measure exposure.",
+  "workspaces": ["server", "client"],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm:dev -w server\" \"npm:dev -w client\"",
+    "build": "npm run build -w client",
+    "start": "npm run start -w server",
+    "seed": "npm run seed -w server",
+    "test": "npm test -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
