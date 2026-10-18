@@ -3,7 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "description": "Out-of-home advertising intelligence: map vehicle mobility, cross it with billboard inventory, measure exposure.",
-  "workspaces": ["server", "client"],
+  "workspaces": [
+    "server",
+    "client"
+  ],
   "scripts": {
     "dev": "concurrently -n api,web -c blue,green \"npm:dev -w server\" \"npm:dev -w client\"",
     "build": "npm run build -w client",
@@ -13,5 +16,8 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
+  },
+  "overrides": {
+    "maplibre-gl": "6.15.0"
   }
 }
