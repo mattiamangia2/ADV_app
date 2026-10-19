@@ -12,7 +12,9 @@
     "build": "npm run build -w client",
     "start": "npm run start -w server",
     "seed": "npm run seed -w server",
-    "test": "npm test -w server"
+    "test": "npm test -w server",
+    "prepare": "git config core.hooksPath .githooks || true",
+    "check-secrets": "node scripts/check-secrets.mjs --all"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

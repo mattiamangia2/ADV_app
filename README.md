@@ -28,6 +28,13 @@ npm start          # serves API + built client on http://localhost:4000
 Other scripts: `npm test` (server tests), `npm run seed` (wipe and regenerate demo data).
 Env vars: `PORT`, `ADV_DB_PATH` (SQLite file, default `server/data/adv.db`), `ADV_TZ` (default `Europe/Rome`), `ADV_SEED=0` (start with an empty DB).
 
+## Secrets & data safety
+
+- Put configuration in a local `.env` (copy `.env.example`). `.env`, keys, credential files, `.npmrc`, local databases and real data exports are all in `.gitignore`.
+- `npm install` turns on a **pre-commit hook** (`.githooks/pre-commit`) that blocks commits containing API keys, tokens, private keys, passwords in URLs or sensitive file types. Run it on the whole repo with `npm run check-secrets`.
+- A GitHub Action (`.github/workflows/secret-scan.yml`) runs gitleaks over the full history on every push and pull request.
+- Only synthetic data belongs in `samples/`. Never commit real mobility traces or customer inventory.
+
 ## How exposure is computed
 
 For every trip and every billboard (`server/src/analytics.js`):

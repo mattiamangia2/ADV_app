@@ -1,8 +1,50 @@
+# Dependencies & build output
 node_modules/
 dist/
+coverage/
+*.tsbuildinfo
+
+# Local database (may contain company data)
+server/data/
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
+*.sqlite
+*.sqlite3
+
+# Secrets & credentials — never commit these
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+*.kdbx
+credentials*.json
+service-account*.json
+*-credentials.json
+secrets.*
+.npmrc
+.netrc
+.htpasswd
+
+# Real mobility / customer data exports (keep only the synthetic samples/)
+data/
+exports/
+uploads/
+
+# Logs & OS / editor files
+*.log
+npm-debug.log*
+logs/
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
