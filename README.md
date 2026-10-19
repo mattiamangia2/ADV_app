@@ -7,7 +7,9 @@ Map how vehicles actually move through a city, cross those routes with billboard
 - **Company inventory portal**: each media owner enters and maintains its own sites (form, CSV import/export, custom fields).
 - **Analytics**: reach, frequency, impressions, CPM, occupancy, weakest sites, best-value sites, *opportunity spots* (busy places with no billboard nearby), campaigns ending soon, permits expiring.
 
-The app starts with **synthetic demo data for Milan** (a week of simulated car trips + 90 billboards for three fictional companies). None of it is real traffic or real inventory.
+The app starts with **demo data for Milan**. On first start it downloads Milan's **real road network from OpenStreetMap** (≈10 MB, once, cached in `server/data/`) and simulates a week of car trips along those streets, plus 120 billboards for three fictional companies placed on real roads. The traffic and the billboards are simulated, not real counts or real inventory. Without internet it falls back to a schematic ring-and-radial network.
+
+Map controls: drag to move, mouse wheel to zoom, **wheel-click drag (or right-drag) to tilt and rotate**. Base maps: dark, streets, light (OpenStreetMap via CARTO) and satellite (Esri).
 
 ## Quick start
 
@@ -25,7 +27,7 @@ npm run build      # builds the client into client/dist
 npm start          # serves API + built client on http://localhost:4000
 ```
 
-Other scripts: `npm test` (server tests), `npm run seed` (wipe and regenerate demo data).
+Other scripts: `npm test` (server tests), `npm run seed` (wipe and regenerate demo data; add `-- --refresh-osm` to re-download roads or `-- --synthetic` for the offline network).
 Env vars: `PORT`, `ADV_DB_PATH` (SQLite file, default `server/data/adv.db`), `ADV_TZ` (default `Europe/Rome`), `ADV_SEED=0` (start with an empty DB).
 
 ## Secrets & data safety
@@ -67,7 +69,22 @@ Upload on the *Mobility data* tab or `POST /api/trips/import`:
 - **CSV of GPS pings**: `trip_id,lat,lon,timestamp[,weight,vehicle_type]`
 - **GeoJSON** FeatureCollection of LineStrings with per-vertex times in `properties.timestamps` or as the 3rd coordinate.
 
-Examples are in [`samples/`](samples). Real sources: connected-car / fleet telematics, navigation-app panels, mobile-location SDK data. Use anonymised data you have a legal basis to process (GDPR).
+Examples are in [`samples/`](samples). Use anonymised data you have a legal basis to process (GDPR).
+
+### Where to get real traffic data (Milan / Italy)
+
+| Source | What you get | Access |
+|---|---|---|
+| **Audioutdoor** (Italian OOH audience JIC) | Official audience per billboard, by hour/day, reach & frequency | Members (media owners, UPA advertisers, UNA agencies) |
+| **OCTO Telematics** (insurance black boxes) | Anonymised GPS trips, origin/destination matrices, flows by hour | Commercial |
+| **TomTom MOVE** (O/D Analysis, Route Monitoring, Traffic Stats) / **HERE**, **INRIX** | Trips, speeds and volumes per road segment | Commercial, free trials |
+| Telco data: **TIM**, **Vodafone Business Analytics**, **Teralytics** | People flows and O/D between zones | Commercial |
+| Location panels: **Huq**, **Quadrant**, **Mapbox Movement** | Device trajectories / activity density | Commercial |
+| **Comune di Milano open data** (dati.comune.milano.it), **dati.lombardia.it**, **ISTAT** commuting matrices, **ANAS** traffic counts | Area C/B gate entries, regional O/D matrices, commuting between municipalities, counts on state roads | Free |
+| **Telecom Italia Big Data Challenge** (Milan, 2013, Harvard Dataverse) | Mobile activity on a 235 m grid every 10 min | Free, good for heatmap tests |
+| Your own **GPS loggers / fleet** (taxis, delivery vans, OBD dongles) | Exact traces | Own data |
+
+Trip-level GPS data plugs straight into the *Mobility data* upload. Counts per road segment or zone-to-zone matrices would need a new importer (see roadmap).
 
 ## API
 
@@ -85,13 +102,13 @@ Examples are in [`samples/`](samples). Real sources: connected-car / fleet telem
 
 ```
 server/   Express API, SQLite (node:sqlite), exposure engine, demo-data simulator, tests
-client/   React + Vite + deck.gl + MapLibre (CARTO dark basemap)
+client/   React + Vite + deck.gl + MapLibre (CARTO / Esri base maps)
 samples/  example upload files
 ```
 
 ## Roadmap — suggested next steps
 
-1. **Real road network & map matching**: snap GPS pings to OpenStreetMap roads (OSRM / Valhalla map-matching) so counts are per road segment, and auto-fill road name, type and speed limit for each billboard.
+1. **Map matching & segment counts**: snap uploaded GPS pings to the OpenStreetMap roads (OSRM / Valhalla), import counts per road segment (TomTom/ANAS/sensors) and O/D matrices, and auto-fill road name, type and speed limit for each billboard.
 2. **Accounts & permissions**: logins, one workspace per company, roles (owner, sales, viewer); today the company selector is trust-based.
 3. **Advertiser side**: plan a campaign by target area, hours and budget → the app proposes the set of billboards that maximises reach (greedy set cover over trips), with availability calendar and booking requests.
 4. **Line-of-sight**: use building footprints / 3D city models to remove views blocked by buildings or trees.
@@ -99,3 +116,7 @@ samples/  example upload files
 6. **Data at scale**: move to PostGIS (or DuckDB-spatial) and pre-aggregate trips into H3 cells when the data reaches millions of trips.
 7. **Proof of posting**: photo uploads with timestamps/geotag per campaign; digital play logs.
 8. **Reports**: export a campaign PDF (map + reach + CPM) for clients.
+
+## Data credits
+
+Road network © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL). Base maps © CARTO, © OpenStreetMap contributors; satellite imagery © Esri, Maxar, Earthstar Geographics.

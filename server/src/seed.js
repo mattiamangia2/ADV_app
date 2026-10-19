@@ -1,10 +1,14 @@
-// Synthetic demo data for Milan. NOT real traffic or real inventory.
-// Builds a radio-centric road graph (rings + radial avenues, like Milan's layout),
-// simulates a week of car trips with morning/evening commuting peaks, and places
-// billboards for three fictional media owners — most on busy roads, some off-route.
+// Demo data for Milan. The ROADS are real (OpenStreetMap) when they can be
+// downloaded; the TRAFFIC and BILLBOARDS are simulated — not real counts or real inventory.
+// Simulates a week of car trips with morning/evening commuting peaks routed over the
+// road network, and places billboards for three fictional media owners — most on busy
+// roads, some deliberately off-route. Without internet it falls back to a schematic
+// radio-centric network (rings + radial avenues, like Milan's layout).
 
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { destination, bearing, haversine } from './geo.js';
+import { GridIndex, destination, bearing, haversine } from './geo.js';
+import { OSM_CACHE, buildRoadGraph, loadRoads, mainComponent } from './osm.js';
 import { FORMATS } from './domain.js';
 import { insert, openDb } from './db.js';
 
@@ -17,8 +21,6 @@ const RINGS = [
 ];
 const RADIALS = 16;
 const OUTER = 10500;
-// Some corridors carry more commuters than others.
-const RADIAL_DEMAND = [3, 1, 2, 1, 2.5, 1, 1, 1.5, 3, 1, 1.5, 1, 2, 1, 1, 2];
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -76,20 +78,49 @@ export function buildNetwork(rand) {
   return { nodes, edges, adj, radii };
 }
 
+/** A* search with a binary heap. Cost = travel time with per-trip random noise (0.8–1.4). */
 function shortestPath(net, from, to, noise) {
-  const dist = new Map([[from, 0]]);
+  const goal = net.nodes[to];
+  // Slightly greedy heuristic (assumes ~40 km/h to the goal): much faster than exact search, and
+  // routes are randomised anyway, so a few per cent longer than optimal is fine for simulation.
+  const h = (n) => haversine(net.nodes[n].lat, net.nodes[n].lon, goal.lat, goal.lon) / 40;
+  const g = new Map([[from, 0]]);
   const prev = new Map();
-  const done = new Set();
-  while (true) {
-    let u = null, best = Infinity;
-    for (const [n, d] of dist) if (!done.has(n) && d < best) { best = d; u = n; }
-    if (u == null || u === to) break;
-    done.add(u);
+  const closed = new Set();
+  const heap = [[h(from), from]];
+  const push = (item) => {
+    heap.push(item);
+    for (let i = heap.length - 1; i > 0;) {
+      const p = (i - 1) >> 1;
+      if (heap[p][0] <= heap[i][0]) break;
+      [heap[p], heap[i]] = [heap[i], heap[p]]; i = p;
+    }
+  };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      for (let i = 0; ;) {
+        const l = 2 * i + 1, r = l + 1;
+        let m = i;
+        if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+        if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+        if (m === i) break;
+        [heap[m], heap[i]] = [heap[i], heap[m]]; i = m;
+      }
+    }
+    return top;
+  };
+  while (heap.length) {
+    const [, u] = pop();
+    if (u === to) break;
+    if (closed.has(u)) continue;
+    closed.add(u);
+    const gu = g.get(u);
     for (const { to: v, e, fwd } of net.adj.get(u)) {
       const edge = net.edges[e];
-      const cost = (edge.len / edge.speed) * noise(e);
-      const nd = best + cost;
-      if (nd < (dist.get(v) ?? Infinity)) { dist.set(v, nd); prev.set(v, { u, e, fwd }); }
+      const nd = gu + (edge.len / edge.speed) * noise(e);
+      if (nd < (g.get(v) ?? Infinity)) { g.set(v, nd); prev.set(v, { u, e, fwd }); push([nd + h(v), v]); }
     }
   }
   const steps = [];
@@ -112,26 +143,43 @@ function pickWeighted(rand, weights) {
   return weights.length - 1;
 }
 
+/**
+ * Where trips start and end. Nodes are grouped by distance from the Duomo and
+ * repeated by a random "attractiveness" so some neighbourhoods generate more traffic.
+ */
+function demandZones(net, rand) {
+  const usable = new Set(net.usable ?? net.nodes.map((n) => n.id));
+  const zones = { inner: [], outer: [], all: [] };
+  for (const n of net.nodes) {
+    if (!usable.has(n.id)) continue;
+    const d = haversine(n.lat, n.lon, CENTER[0], CENTER[1]);
+    const copies = 1 + Math.floor(rand() ** 3 * 6);
+    for (let i = 0; i < copies; i++) {
+      zones.all.push(n.id);
+      if (d < 3200) zones.inner.push(n.id);
+      if (d > 4500) zones.outer.push(n.id);
+    }
+  }
+  if (!zones.inner.length) zones.inner = zones.all;
+  if (!zones.outer.length) zones.outer = zones.all;
+  return zones;
+}
+
 export function simulateTrips(net, rand, { count = 2500, days = 7, startDate = '2026-10-05' } = {}) {
   const trips = [];
   const base = Date.parse(`${startDate}T00:00:00+02:00`) / 1000;
-  const lastRing = net.radii.length - 1;
+  const zones = demandZones(net, rand);
   for (let n = 0; n < count; n++) {
     const day = Math.floor(rand() * days);
     const weekend = day >= 5;
     const hour = weekend ? 9 + Math.floor(rand() * 12) : pickWeighted(rand, HOURLY);
     const t0 = base + day * 86400 + hour * 3600 + Math.floor(rand() * 3600);
-    const k1 = pickWeighted(rand, RADIAL_DEMAND);
-    const k2 = pickWeighted(rand, RADIAL_DEMAND);
     // Morning: suburbs -> centre. Evening: centre -> suburbs. Otherwise mixed.
-    const outerRing = () => (rand() < 0.65 ? lastRing : 3 + Math.floor(rand() * 2) - 1);
-    const innerRing = () => Math.floor(rand() * 3);
-    let r1, r2;
-    if (hour < 11) { r1 = outerRing(); r2 = innerRing(); }
-    else if (hour >= 16 && hour < 21) { r1 = innerRing(); r2 = outerRing(); }
-    else { r1 = Math.floor(rand() * 5); r2 = Math.floor(rand() * 5); }
-    const from = Math.min(r1, lastRing) * RADIALS + k1;
-    const to = Math.min(r2, lastRing) * RADIALS + k2;
+    const pick = (zone) => zone[Math.floor(rand() * zone.length)];
+    let from, to;
+    if (hour < 11) { from = pick(zones.outer); to = pick(zones.inner); }
+    else if (hour >= 16 && hour < 21) { from = pick(zones.inner); to = pick(zones.outer); }
+    else { from = pick(zones.all); to = pick(zones.all); }
     if (from === to) continue;
     const noiseMap = new Map();
     const noise = (e) => { if (!noiseMap.has(e)) noiseMap.set(e, 0.8 + rand() * 0.6); return noiseMap.get(e); };
@@ -193,9 +241,41 @@ const PRICE = { // monthly list price range, EUR
   digital_totem: [500, 1200], bus_shelter: [300, 600],
 };
 
-export function seed(db, { seedValue = 42, tripCount = 2500 } = {}) {
-  const rand = rng(seedValue);
+/** Real OSM road graph when available, otherwise the schematic one. */
+export async function loadNetwork(rand, { useOsm = true, log = console.log } = {}) {
+  const roads = useOsm ? await loadRoads({ log }) : null;
+  if (roads) {
+    const net = buildRoadGraph(roads);
+    net.usable = mainComponent(net);
+    net.maxSpeed = Math.max(...net.edges.map((e) => e.speed));
+    log(`Using real OpenStreetMap roads: ${net.edges.length} street segments, ${net.usable.length} intersections.`);
+    return net;
+  }
   const net = buildNetwork(rand);
+  net.kind = 'schematic';
+  net.maxSpeed = 80;
+  return net;
+}
+
+/** A point at least `minDist` metres from every road vertex (for the "badly placed" demo sites). */
+function offRoadPoint(net, rand, minDist = 220) {
+  if (!net._pointIndex) {
+    net._pointIndex = new GridIndex(0.005);
+    for (const e of net.edges) for (const [lon, lat] of e.pts) net._pointIndex.insert(lat, lon, [lat, lon]);
+  }
+  const pad = minDist / 111000;
+  let cand;
+  for (let tries = 0; tries < 40; tries++) {
+    cand = destination(CENTER[0], CENTER[1], rand() * 360, 1500 + rand() * 7000);
+    const near = net._pointIndex.query(cand[0], cand[1], cand[0], cand[1], pad);
+    if (!near.some(([la, lo]) => haversine(cand[0], cand[1], la, lo) < minDist)) return cand;
+  }
+  return cand;
+}
+
+export async function seed(db, { seedValue = 42, tripCount = 2500, useOsm = true, log = console.log } = {}) {
+  const rand = rng(seedValue);
+  const net = await loadNetwork(rand, { useOsm, log });
   const trips = simulateTrips(net, rand, { count: tripCount });
   db.exec('BEGIN');
   for (const t of trips) insert(db, 'trips', t);
@@ -209,18 +289,19 @@ export function seed(db, { seedValue = 42, tripCount = 2500 } = {}) {
   const today = new Date('2026-10-18');
   const iso = (d) => d.toISOString().slice(0, 10);
   let n = 0;
-  const TOTAL = 90;
-  // Bias placement toward busy edges, the way a real network grows.
-  const edgeWeight = net.edges.map((e) => (e.type === 'urban' ? 1 : 1.5) * e.len);
+  const TOTAL = net.kind === 'osm' ? 120 : 90;
+  // Bias placement toward big roads, the way a real network grows; avoid ramps and nameless bits.
+  const usable = new Set(net.usable ?? net.nodes.map((n) => n.id));
+  const edgeWeight = net.edges.map((e) => (!usable.has(e.a) || /_link$/.test(e.highway || '') ? 0
+    : (e.type === 'urban' ? 1 : 1.5) * (e.name === 'Unnamed road' ? 0.2 : 1) * e.len));
   for (let i = 0; i < TOTAL; i++) {
     const companyIdx = pickWeighted(rand, [0.45, 0.35, 0.2]);
     const companyId = companyIds[companyIdx];
     let lat, lon, facing, edge, format;
     const offRoute = rand() < 0.18;
     if (offRoute) {
-      // Random point that is likely between roads — illustrates poorly placed sites.
-      const [la, lo] = destination(CENTER[0], CENTER[1], rand() * 360, 1500 + rand() * 7000);
-      lat = la; lon = lo; facing = Math.floor(rand() * 360);
+      // A point away from the main roads — illustrates poorly placed sites.
+      [lat, lon] = offRoadPoint(net, rand); facing = Math.floor(rand() * 360);
       format = ['poster_6x3', 'poster_4x3', 'street_poster', 'backlit'][Math.floor(rand() * 4)];
     } else {
       edge = net.edges[pickWeighted(rand, edgeWeight)];
@@ -255,7 +336,7 @@ export function seed(db, { seedValue = 42, tripCount = 2500 } = {}) {
       address: edge ? `${edge.name}, Milano` : `Via di quartiere ${n}, Milano`,
       road_name: edge ? edge.name : null,
       road_type: edge ? edge.type : 'local',
-      speed_limit_kmh: edge ? (edge.type === 'motorway' ? 90 : edge.type === 'arterial' ? 50 : 30) : 30,
+      speed_limit_kmh: edge ? edge.speed : 30,
       facing_azimuth: format === 'bus_shelter' ? null : facing,
       width_m: fmt.width_m, height_m: fmt.height_m,
       surface_m2: +(fmt.width_m * fmt.height_m).toFixed(2),
@@ -297,12 +378,15 @@ export function seed(db, { seedValue = 42, tripCount = 2500 } = {}) {
     if (rand() < 0.65) addCampaign(-Math.floor(rand() * 40), 14 + Math.floor(rand() * 75));
   }
   db.exec('COMMIT');
-  return { trips: trips.length, billboards: TOTAL, companies: companyIds.length };
+  return { roads: net.kind, trips: trips.length, billboards: TOTAL, companies: companyIds.length };
 }
 
 // CLI: `npm run seed` wipes and re-seeds the database.
+//   --synthetic    use the schematic network instead of real OpenStreetMap roads
+//   --refresh-osm  download the OpenStreetMap roads again
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  if (process.argv.includes('--refresh-osm')) fs.rmSync(OSM_CACHE, { force: true });
   const db = openDb();
   if (process.argv.includes('--reset')) db.exec('DELETE FROM campaigns; DELETE FROM billboards; DELETE FROM trips; DELETE FROM companies;');
-  console.log('Seeded:', seed(db));
+  console.log('Seeded:', await seed(db, { useOsm: !process.argv.includes('--synthetic') }));
 }

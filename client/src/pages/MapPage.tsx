@@ -3,6 +3,7 @@ import DeckGL from '@deck.gl/react';
 import { ArcLayer, PathLayer, ScatterplotLayer, SolidPolygonLayer } from '@deck.gl/layers';
 import { HeatmapLayer, HexagonLayer } from '@deck.gl/aggregation-layers';
 import { TripsLayer } from '@deck.gl/geo-layers';
+import { MapController } from '@deck.gl/core';
 import type { PickingInfo } from '@deck.gl/core';
 import { Map } from 'react-map-gl/maplibre';
 import type { Ctx } from '../App';
@@ -12,7 +13,39 @@ import { ROUTE_FIT, SEQ_BLUE, SERIES, compact, hexToRgb, hourLabel, nf } from '.
 import BillboardDetails from '../components/BillboardDetails';
 import BillboardForm from '../components/BillboardForm';
 
-const BASEMAP = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+// Base maps: all real cartography of Milan from OpenStreetMap (via CARTO) or Esri satellite imagery.
+const satellite = {
+  version: 8 as const,
+  sources: {
+    esri: {
+      type: 'raster' as const, tileSize: 256, maxzoom: 19,
+      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
+    },
+    labels: {
+      type: 'raster' as const, tileSize: 256,
+      tiles: ['https://basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png'],
+      attribution: '© OpenStreetMap contributors © CARTO',
+    },
+  },
+  layers: [{ id: 'esri', type: 'raster' as const, source: 'esri' }, { id: 'labels', type: 'raster' as const, source: 'labels' }],
+};
+const BASEMAPS: Record<string, { label: string; style: any }> = {
+  dark: { label: 'Dark (streets)', style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' },
+  streets: { label: 'Streets (colour)', style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json' },
+  light: { label: 'Light', style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json' },
+  satellite: { label: 'Satellite', style: satellite },
+};
+
+/** Left-drag pans; middle-button (wheel click) drag tilts and rotates. Right-drag also tilts. */
+class WheelTiltController extends MapController {
+  _onPanStart(event: any) {
+    if (event.middleButton) event.rightButton = true;
+    return super._onPanStart(event);
+  }
+}
+const CONTROLLER = { type: WheelTiltController, dragRotate: true, touchRotate: true };
+const readPref = (k: string, d: string) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
 const INITIAL_VIEW = { longitude: 9.19, latitude: 45.4642, zoom: 11.3, pitch: 35, bearing: 0 };
 
 type Layers = { heatmap: boolean; hexagons: boolean; trips: boolean; flows: boolean; billboards: boolean; gaps: boolean };
@@ -42,6 +75,8 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
   const [metrics, setMetrics] = useState<Metrics[]>([]);
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [flows, setFlows] = useState<Flow[]>([]);
+  const [basemap, setBasemap] = useState(() => readPref('basemap', 'dark'));
+  useEffect(() => { try { localStorage.setItem('basemap', basemap); } catch { /* ignore */ } }, [basemap]);
   const [layers, setLayers] = useState<Layers>({ heatmap: true, hexagons: false, trips: false, flows: false, billboards: true, gaps: false });
   const [colorBy, setColorBy] = useState<ColorBy>('route_fit');
   const [onlyMine, setOnlyMine] = useState(false);
@@ -189,16 +224,21 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
   const hourOpts = Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{hourLabel(h)}</option>);
 
   return (
-    <div className="map-page">
+    <div
+      className="map-page"
+      // Stop the browser's auto-scroll icon when the wheel button is pressed, so it can tilt the map.
+      onMouseDownCapture={(e) => { if (e.button === 1) e.preventDefault(); }}
+      onAuxClick={(e) => e.preventDefault()}
+    >
       <DeckGL
         initialViewState={INITIAL_VIEW}
-        controller
+        controller={CONTROLLER}
         layers={deckLayers}
         onClick={onClick}
         onHover={setHover}
         getCursor={({ isDragging, isHovering }) => (pickMode ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab')}
       >
-        <Map mapStyle={BASEMAP} />
+        <Map mapStyle={BASEMAPS[basemap]?.style ?? BASEMAPS.dark.style} />
       </DeckGL>
       {tooltip()}
 
@@ -223,6 +263,13 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
             <input type="range" min={0} max={86399} value={time} onChange={(e) => setTime(Number(e.target.value))} style={{ width: '100%' }} aria-label="Time of day" />
           </section>
         )}
+        <section>
+          <h3>Base map</h3>
+          <select value={basemap} onChange={(e) => setBasemap(e.target.value)} aria-label="Base map" style={{ width: '100%' }}>
+            {Object.entries(BASEMAPS).map(([k, b]) => <option key={k} value={k}>{b.label}</option>)}
+          </select>
+          <div className="hint" style={{ marginTop: 6 }}>Drag: move · Wheel: zoom · Wheel-click drag (or right-drag): tilt &amp; rotate</div>
+        </section>
         <section>
           <h3>Time of day</h3>
           <div className="row">

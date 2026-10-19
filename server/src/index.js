@@ -11,8 +11,8 @@ const PORT = Number(process.env.PORT) || 4000;
 
 const db = openDb();
 if (db.prepare('SELECT COUNT(*) AS n FROM companies').get().n === 0 && process.env.ADV_SEED !== '0') {
-  console.log('Empty database: loading synthetic demo data (set ADV_SEED=0 to skip)…');
-  seed(db);
+  console.log('Empty database: generating demo data (set ADV_SEED=0 to skip)…');
+  await seed(db);
 }
 
 const app = createApp(db);
