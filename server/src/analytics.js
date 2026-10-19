@@ -7,6 +7,7 @@
 // normalised to an average day.
 
 import { GridIndex, angleDiff, bearing, haversine, pointToSegment } from './geo.js';
+import { getSetting } from './db.js';
 import { withDefaults } from './domain.js';
 
 const TZ = process.env.ADV_TZ || 'Europe/Rome';
@@ -46,9 +47,24 @@ const safeJson = (s) => { try { return JSON.parse(s || '{}'); } catch { return {
  * Core computation over ALL billboards (company filtering happens after so that
  * benchmarks/percentiles are market-wide). Cached until data changes.
  */
+/** Which traffic data drives analytics: GPS trips or road-segment volumes. */
+export function trafficMode(db) {
+  const pref = getSetting(db, 'traffic_source', 'auto');
+  if (pref === 'trips' || pref === 'segments') return pref;
+  return db.prepare('SELECT COUNT(*) AS n FROM road_segments').get().n > 0 ? 'segments' : 'trips';
+}
+
 export function computeExposure(db, { hourFrom = 0, hourTo = 23 } = {}) {
-  const key = `${dataVersion}:${hourFrom}:${hourTo}`;
+  const mode = trafficMode(db);
+  const key = `${dataVersion}:${mode}:${hourFrom}:${hourTo}`;
   if (cache.key === key) return cache.value;
+  const value = mode === 'segments' ? computeSegmentExposure(db, { hourFrom, hourTo }) : computeTripExposure(db, { hourFrom, hourTo });
+  value.mode = mode;
+  cache = { key, value };
+  return value;
+}
+
+function computeTripExposure(db, { hourFrom, hourTo }) {
 
   const trips = loadTrips(db);
   const billboards = loadBillboards(db);
@@ -140,21 +156,26 @@ export function computeExposure(db, { hourFrom = 0, hourTo = 23 } = {}) {
     };
   });
 
-  // Market-wide percentile -> how "on route" a billboard is.
+  rankRouteFit(perBillboard);
+  return { days: nDays, totalTrips, totalPeople, perBillboard, tripHits, billboards };
+}
+
+/** Market-wide percentile -> how "on route" a billboard is. */
+function rankRouteFit(perBillboard) {
   const sorted = perBillboard.map((p) => p.people_per_day).sort((a, b) => a - b);
   for (const p of perBillboard) {
     const rank = sorted.filter((v) => v <= p.people_per_day).length / Math.max(1, sorted.length);
     p.traffic_percentile = round(rank * 100);
     p.route_fit = p.people_per_day === 0 ? 'off-route' : rank >= 0.66 ? 'main flow' : rank >= 0.33 ? 'secondary' : 'marginal';
   }
-
-  const value = { days: nDays, totalTrips, totalPeople, perBillboard, tripHits, billboards };
-  cache = { key, value };
-  return value;
 }
 
 /** Network-level reach for a set of billboards (e.g. one company's inventory). */
 export function reachSummary(exposure, billboardIds) {
+  if (exposure.mode === 'segments') {
+    // Road volumes don't say which vehicles are the same trip, so reach/frequency can't be measured.
+    return { days: 1, vehicle_trips_per_day: null, reached_trips_per_day: null, reach_pct: null, avg_frequency: null };
+  }
   const ids = new Set(billboardIds);
   let reached = 0, contacts = 0;
   for (const { w, set } of exposure.tripHits.values()) {
@@ -176,6 +197,7 @@ export function reachSummary(exposure, billboardIds) {
  * candidate locations for new sites.
  */
 export function findGaps(db, billboards, { cellM = 300, radiusM = 350, limit = 25 } = {}) {
+  if (trafficMode(db) === 'segments') return findSegmentGaps(db, billboards, { cellM, radiusM, limit });
   const trips = loadTrips(db);
   const cellLat = cellM / 111000;
   const cells = new Map();
@@ -225,6 +247,137 @@ export function odFlows(db, { cellM = 1000, limit = 300 } = {}) {
   return [...flows.values()]
     .map((f) => ({ ...f, per_day: round(f.count / days, 1) }))
     .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+
+// ---------------------------------------------------------------------------
+// Road-segment volumes (vehicles/day per direction) instead of GPS trips.
+// ---------------------------------------------------------------------------
+
+/** Typical urban weekday share of daily traffic per hour (sums to 1). */
+const HOURLY_RAW = [0.2, 0.1, 0.1, 0.1, 0.2, 0.6, 1.8, 4.5, 6, 4, 2.6, 2.5, 2.8, 2.6, 2.4, 2.6, 3.4, 5, 5.6, 4, 2.4, 1.6, 1, 0.5];
+const HOURLY_TOTAL = HOURLY_RAW.reduce((a, b) => a + b, 0);
+export const HOURLY_SHARE = HOURLY_RAW.map((v) => v / HOURLY_TOTAL);
+
+export function loadSegments(db) {
+  return db.prepare('SELECT * FROM road_segments').all().map((s) => ({ ...s, coords: JSON.parse(s.coords) }));
+}
+
+function segmentIndex(segments) {
+  const index = new GridIndex(0.005);
+  for (const s of segments) {
+    let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
+    for (const [lon, lat] of s.coords) {
+      minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+      minLon = Math.min(minLon, lon); maxLon = Math.max(maxLon, lon);
+    }
+    // Register the segment in every grid cell its bounding box touches.
+    const c = index.cell;
+    for (let i = Math.floor(minLat / c); i <= Math.floor(maxLat / c); i++)
+      for (let j = Math.floor(minLon / c); j <= Math.floor(maxLon / c); j++) {
+        const k = index.key(i, j);
+        if (!index.cells.has(k)) index.cells.set(k, []);
+        index.cells.get(k).push(s);
+      }
+  }
+  return index;
+}
+
+/**
+ * For each billboard: find road segments within readable distance, keep the directions whose
+ * drivers face the billboard, and add up their daily volumes. Consecutive pieces of the same
+ * road going the same way are the same vehicles, so per (road name, heading) only the largest
+ * volume counts; different roads or directions add up.
+ */
+function computeSegmentExposure(db, { hourFrom, hourTo }) {
+  const segments = loadSegments(db);
+  const billboards = loadBillboards(db);
+  const index = segmentIndex(segments);
+  const inWindow = (h) => (hourFrom <= hourTo ? h >= hourFrom && h <= hourTo : h >= hourFrom || h <= hourTo);
+  const windowShare = HOURLY_SHARE.reduce((s, v, h) => s + (inWindow(h) ? v : 0), 0);
+
+  let totalVehicles = 0, totalPeople = 0;
+  for (const s of segments) { totalVehicles += s.vol_ab + s.vol_ba; totalPeople += (s.vol_ab + s.vol_ba) * (s.occupancy ?? 1.3); }
+
+  const perBillboard = billboards.map((b) => {
+    const pad = b.visibility_m / 111000 + 0.0005;
+    const seen = new Set();
+    const groups = new Map(); // key -> { vehicles, people, dwell, speed }
+    for (const s of index.query(b.lat, b.lon, b.lat, b.lon, pad)) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id);
+      let best = null;
+      for (let i = 0; i < s.coords.length - 1; i++) {
+        const [aLon, aLat] = s.coords[i], [bLon, bLat] = s.coords[i + 1];
+        const { dist } = pointToSegment(b.lat, b.lon, aLat, aLon, bLat, bLon);
+        if (!best || dist < best.dist) best = { dist, heading: bearing(aLat, aLon, bLat, bLon) };
+      }
+      if (!best || best.dist > b.visibility_m) continue;
+      const speed = s.speed_kmh || 40;
+      const chord = 2 * Math.sqrt(Math.max(0, b.visibility_m ** 2 - best.dist ** 2));
+      const dwell = Math.min(120, chord / (speed / 3.6));
+      for (const [vol, heading] of [[s.vol_ab, best.heading], [s.vol_ba, (best.heading + 180) % 360]]) {
+        if (!(vol > 0)) continue;
+        if (b.facing_azimuth != null && angleDiff(heading, (b.facing_azimuth + 180) % 360) > b.viewing_angle_deg) continue;
+        const key = `${(s.name || '').toLowerCase()}|${Math.round(heading / 45) % 8}`;
+        const g = groups.get(key);
+        if (!g || vol > g.vehicles) groups.set(key, { vehicles: vol, people: vol * (s.occupancy ?? 1.3), dwell, speed });
+      }
+    }
+    let vehicles = 0, people = 0, dwellW = 0, speedW = 0;
+    for (const g of groups.values()) { vehicles += g.vehicles; people += g.people; dwellW += g.dwell * g.vehicles; speedW += g.speed * g.vehicles; }
+    vehicles *= windowShare; people *= windowShare;
+    const avgDwell = vehicles ? dwellW * windowShare / vehicles : 0;
+    const vi = visibilityIndex(b, avgDwell);
+    const shareOfVoice = b.media_type === 'digital' && b.slot_seconds && b.loop_seconds ? b.slot_seconds / b.loop_seconds : 1;
+    const impressionsDay = people * vi * shareOfVoice;
+    const priceMonth = b.price_month ?? (b.price_year ? b.price_year / 12 : b.price_week ? b.price_week * 4.33 : null);
+    const dayPeople = people / (windowShare || 1);
+    const hourly = HOURLY_SHARE.map((v, h) => (inWindow(h) ? dayPeople * v : 0));
+    return {
+      billboard_id: b.id,
+      company_id: b.company_id,
+      vehicles_per_day: round(vehicles),
+      people_per_day: round(people),
+      avg_dwell_s: round(avgDwell, 1),
+      avg_speed_kmh: vehicles ? round(speedW * windowShare / vehicles) : null,
+      visibility_index: round(vi, 2),
+      share_of_voice: round(shareOfVoice, 3),
+      impressions_per_day: round(impressionsDay),
+      impressions_per_month: round(impressionsDay * 30),
+      cpm: priceMonth && impressionsDay > 0 ? round((priceMonth / (impressionsDay * 30)) * 1000, 2) : null,
+      hourly_people: hourly.map((v) => round(v, 1)),
+      peak_hour: hourly.indexOf(Math.max(...hourly)),
+      sample_trip_ids: [],
+    };
+  });
+  rankRouteFit(perBillboard);
+  return { days: 1, totalTrips: totalVehicles * windowShare, totalPeople: totalPeople * windowShare, perBillboard, tripHits: new Map(), billboards };
+}
+
+function findSegmentGaps(db, billboards, { cellM, radiusM, limit }) {
+  const cellLat = cellM / 111000;
+  const cells = new Map();
+  for (const s of loadSegments(db)) {
+    const vol = s.vol_ab + s.vol_ba;
+    for (let i = 0; i < s.coords.length - 1; i++) {
+      const [aLon, aLat] = s.coords[i], [bLon, bLat] = s.coords[i + 1];
+      const n = Math.max(1, Math.ceil(haversine(aLat, aLon, bLat, bLon) / 100));
+      for (let k = 0; k <= n; k++) {
+        const lat = aLat + ((bLat - aLat) * k) / n, lon = aLon + ((bLon - aLon) * k) / n;
+        const cellLon = cellM / (111000 * Math.cos((lat * Math.PI) / 180));
+        const key = `${Math.floor(lat / cellLat)}:${Math.floor(lon / cellLon)}`;
+        const c = cells.get(key);
+        if (!c || vol > c.vehicles_per_day) cells.set(key, { lat, lon, vehicles_per_day: round(vol) });
+      }
+    }
+  }
+  const index = new GridIndex(0.01);
+  for (const b of billboards) index.insert(b.lat, b.lon, b);
+  const pad = radiusM / 111000;
+  return [...cells.values()]
+    .sort((a, b) => b.vehicles_per_day - a.vehicles_per_day)
+    .filter((c) => !index.query(c.lat, c.lon, c.lat, c.lon, pad).some((b) => haversine(c.lat, c.lon, b.lat, b.lon) <= radiusM))
     .slice(0, limit);
 }
 

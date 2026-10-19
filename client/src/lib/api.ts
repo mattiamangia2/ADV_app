@@ -1,4 +1,4 @@
-import type { Billboard, Company, Flow, Gap, Meta, Metrics, Summary, Trip } from './types';
+import type { Billboard, Company, Flow, Gap, Meta, Metrics, Segment, SegmentImportOptions, SegmentStats, Summary, Trip } from './types';
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
@@ -29,8 +29,9 @@ export const api = {
   createBillboard: (companyId: number, b: Partial<Billboard>) => req<Billboard>(`/api/billboards${qs({ companyId })}`, json('POST', b)),
   updateBillboard: (id: number, b: Partial<Billboard>) => req<Billboard>(`/api/billboards/${id}`, json('PUT', b)),
   deleteBillboard: (id: number) => req<void>(`/api/billboards/${id}`, { method: 'DELETE' }),
-  importBillboards: (companyId: number, csv: string) =>
-    req<{ created: number; errors: { row: number; errors: string[] }[] }>(`/api/billboards/import${qs({ companyId })}`, { method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csv }),
+  /** CSV text, or GeoJSON text (e.g. exported from QGIS / QuickOSM). */
+  importBillboards: (companyId: number, text: string, isCsv: boolean) =>
+    req<{ created: number; assumed_format: number; errors: { row: number; errors: string[] }[] }>(`/api/billboards/import${qs({ companyId })}`, { method: 'POST', headers: { 'Content-Type': isCsv ? 'text/csv' : 'application/json' }, body: text }),
   addCampaign: (billboardId: number, c: Record<string, unknown>) => req(`/api/billboards/${billboardId}/campaigns`, json('POST', c)),
   deleteCampaign: (id: number) => req<void>(`/api/campaigns/${id}`, { method: 'DELETE' }),
 
@@ -39,6 +40,13 @@ export const api = {
   importTrips: (text: string, isCsv: boolean) =>
     req<{ imported: number }>('/api/trips/import', { method: 'POST', headers: { 'Content-Type': isCsv ? 'text/csv' : 'application/json' }, body: text }),
   clearTrips: () => req<void>('/api/trips', { method: 'DELETE' }),
+
+  segments: () => req<Segment[]>('/api/segments'),
+  segmentStats: () => req<SegmentStats>('/api/segments/stats'),
+  importSegments: (geojson: unknown, options: SegmentImportOptions) =>
+    req<{ imported: number; skipped: number; used: Record<string, string>; name_field?: string; speed_field?: string }>('/api/segments/import', json('POST', { geojson, options })),
+  clearSegments: () => req<void>('/api/segments', { method: 'DELETE' }),
+  setTrafficSource: (value: 'auto' | 'trips' | 'segments') => req<{ value: string; mode: string }>('/api/settings/traffic-source', json('PUT', { value })),
 
   metrics: (companyId?: number | null, h: Hours = {}) => req<Metrics[]>(`/api/analytics/billboards${qs({ companyId, ...h })}`),
   summary: (companyId?: number | null, h: Hours = {}) => req<Summary>(`/api/analytics/summary${qs({ companyId, ...h })}`),

@@ -1,0 +1,77 @@
+{
+ "type": "FeatureCollection",
+ "name": "billboards_quickosm_sample",
+ "note": "Invented points in QuickOSM export format, only for testing the importer.",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "full_id": "n100001",
+    "osm_id": 100001,
+    "osm_type": "node",
+    "advertising": "billboard",
+    "lit": "yes",
+    "direction": "225"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     9.2098,
+     45.4803
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "full_id": "n100002",
+    "osm_id": 100002,
+    "osm_type": "node",
+    "advertising": "screen",
+    "operator": "Demo DOOH",
+    "direction": "20"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     9.221,
+     45.499
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "full_id": "n100003",
+    "osm_id": 100003,
+    "osm_type": "node",
+    "highway": "bus_stop",
+    "shelter": "yes",
+    "name": "Piazzale Loreto"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     9.2163,
+     45.4851
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "full_id": "n100004",
+    "osm_id": 100004,
+    "osm_type": "node",
+    "advertising": "column"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     9.2015,
+     45.501
+    ]
+   }
+  }
+ ]
+}

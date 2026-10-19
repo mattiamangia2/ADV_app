@@ -64,7 +64,11 @@ The visibility index is a transparent heuristic. Replace it with audited figures
 
 ## Mobility data input
 
-Upload on the *Mobility data* tab or `POST /api/trips/import`:
+Two kinds of traffic data drive the analytics (switch on the *Mobility data* tab; *Auto* uses road volumes when any are loaded):
+
+**Road traffic volumes**: vehicles per day on each road segment, as GeoJSON lines from QGIS (e.g. an AequilibraE traffic assignment), TomTom/HERE, ANAS or municipal counts. One total column (split by the `oneway` attribute) or two per-direction columns (`…_ab` / `…_ba`), per day, per peak hour or per year. A billboard counts the traffic driving towards its face within its readable distance. Several pieces of the same road aren't double-counted. Reach and frequency need GPS trips, so they show "n/a" in this mode.
+
+**GPS trips**: upload on the same tab or `POST /api/trips/import`:
 
 - **CSV of GPS pings**: `trip_id,lat,lon,timestamp[,weight,vehicle_type]`
 - **GeoJSON** FeatureCollection of LineStrings with per-vertex times in `properties.timestamps` or as the 3rd coordinate.
@@ -84,7 +88,9 @@ Examples are in [`samples/`](samples). Use anonymised data you have a legal basi
 | **Telecom Italia Big Data Challenge** (Milan, 2013, Harvard Dataverse) | Mobile activity on a 235 m grid every 10 min | Free, good for heatmap tests |
 | Your own **GPS loggers / fleet** (taxis, delivery vans, OBD dongles) | Exact traces | Own data |
 
-Trip-level GPS data plugs straight into the *Mobility data* upload. Counts per road segment or zone-to-zone matrices would need a new importer (see roadmap).
+Trip-level GPS data and road-segment volumes plug straight into the *Mobility data* tab. **Step-by-step QGIS instructions** (OpenStreetMap billboards and bus shelters, counts → road volumes, AequilibraE traffic assignment, neighbourhoods): [docs/QGIS_GUIDE.md](docs/QGIS_GUIDE.md).
+
+Billboards can also be imported from **GeoJSON** (e.g. QuickOSM `advertising=*` exports; OSM tags are mapped to formats, lighting and facing) or from QGIS CSV exports with `X`/`Y` columns.
 
 ## API
 
@@ -93,9 +99,11 @@ Trip-level GPS data plugs straight into the *Mobility data* upload. Counts per r
 | GET/POST | `/api/companies` | list / create companies |
 | GET | `/api/billboards?companyId=` | inventory with metrics and campaigns |
 | POST/PUT/DELETE | `/api/billboards[/:id]?companyId=` | create / update / delete (company can only touch its own) |
-| POST | `/api/billboards/import?companyId=` | bulk CSV or JSON |
+| POST | `/api/billboards/import?companyId=` | bulk CSV, JSON array or GeoJSON points |
 | POST/DELETE | `/api/billboards/:id/campaigns`, `/api/campaigns/:id` | campaigns |
-| GET/POST/DELETE | `/api/trips`, `/api/trips/import` | mobility data |
+| GET/POST/DELETE | `/api/trips`, `/api/trips/import` | GPS trips |
+| GET/POST/DELETE | `/api/segments`, `/api/segments/stats`, `/api/segments/import` | road-segment volumes (`{ geojson, options }`) |
+| PUT | `/api/settings/traffic-source` | `auto` \| `trips` \| `segments` |
 | GET | `/api/analytics/billboards`, `/summary`, `/gaps`, `/flows` | analytics; `hourFrom`/`hourTo` filter by time of day |
 
 ## Project layout
@@ -103,12 +111,13 @@ Trip-level GPS data plugs straight into the *Mobility data* upload. Counts per r
 ```
 server/   Express API, SQLite (node:sqlite), exposure engine, demo-data simulator, tests
 client/   React + Vite + deck.gl + MapLibre (CARTO / Esri base maps)
-samples/  example upload files
+samples/  example upload files (trips, billboards CSV/GeoJSON, road volumes)
+docs/     QGIS guide
 ```
 
 ## Roadmap — suggested next steps
 
-1. **Map matching & segment counts**: snap uploaded GPS pings to the OpenStreetMap roads (OSRM / Valhalla), import counts per road segment (TomTom/ANAS/sensors) and O/D matrices, and auto-fill road name, type and speed limit for each billboard.
+1. **Map matching & areas**: snap uploaded GPS pings to the OpenStreetMap roads (OSRM / Valhalla), import zones (NIL, census sections) with population for audience profiles, import O/D matrices directly, and auto-fill road name, type and speed limit for each billboard.
 2. **Accounts & permissions**: logins, one workspace per company, roles (owner, sales, viewer); today the company selector is trust-based.
 3. **Advertiser side**: plan a campaign by target area, hours and budget → the app proposes the set of billboards that maximises reach (greedy set cover over trips), with availability calendar and booking requests.
 4. **Line-of-sight**: use building footprints / 3D city models to remove views blocked by buildings or trees.

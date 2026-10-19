@@ -35,10 +35,17 @@ export default function AnalyticsPage({ meta, companies, companyId, version }: C
   return (
     <div className="page">
       <h2>Analytics · {name}</h2>
+      <p className="hint" style={{ marginTop: -8 }}>
+        Traffic source: <b>{s.mode === 'segments' ? 'road-segment volumes (imported)' : 'GPS trips'}</b> — change it on the Mobility data tab.
+      </p>
       <div className="kpis">
         {kpi('Billboards', nf(s.billboards), `${s.digital} digital · ${nf(s.surface_m2)} m²`)}
-        {kpi('Daily reach', `${nf(s.reach_pct, 1)}%`, `${compact(s.reached_trips_per_day)} of ${compact(s.vehicle_trips_per_day)} vehicle trips/day`)}
-        {kpi('Avg. frequency', nf(s.avg_frequency, 2), 'billboards seen per reached trip')}
+        {s.reach_pct == null
+          ? kpi('Daily reach', 'n/a', 'needs GPS trips — road volumes can’t tell which vehicles are the same')
+          : kpi('Daily reach', `${nf(s.reach_pct, 1)}%`, `${compact(s.reached_trips_per_day)} of ${compact(s.vehicle_trips_per_day)} vehicle trips/day`)}
+        {s.avg_frequency == null
+          ? kpi('Avg. frequency', 'n/a', 'needs GPS trips')
+          : kpi('Avg. frequency', nf(s.avg_frequency, 2), 'billboards seen per reached trip')}
         {kpi('Impressions / month', compact(s.impressions_per_month))}
         {kpi('Avg. CPM', money(s.avg_cpm, 'EUR', 2), 'list price / 1000 impressions')}
         {kpi('Occupancy', `${s.occupancy_pct}%`, `${s.running_campaigns} running campaigns`)}
@@ -51,7 +58,7 @@ export default function AnalyticsPage({ meta, companies, companyId, version }: C
           <b>Fit with traffic flows:</b>
           {fitCounts.map(([k, n]) => <span key={k} className="badge"><span style={{ color: ROUTE_FIT[k].color }}>{ROUTE_FIT[k].icon}</span>{ROUTE_FIT[k].label}: {n}</span>)}
         </div>
-        <div className="hint" style={{ marginTop: 6 }}>Ranked against every billboard in the market by people passing per day. Data covers {s.days} days.</div>
+        <div className="hint" style={{ marginTop: 6 }}>Ranked against every billboard in the market by people passing per day. {s.mode === 'segments' ? 'Based on imported vehicles per day on each road.' : `Data covers ${s.days} days.`}</div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 16 }}>

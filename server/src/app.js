@@ -1,17 +1,17 @@
 import express from 'express';
 import cors from 'cors';
-import { BILLBOARD_FIELDS, CAMPAIGN_FIELDS, insert, pick, update } from './db.js';
+import { BILLBOARD_FIELDS, CAMPAIGN_FIELDS, getSetting, insert, pick, setSetting, update } from './db.js';
 import { CAMPAIGN_CATEGORIES, FORMATS, ROAD_TYPES, STATUSES, campaignTiming, withDefaults } from './domain.js';
-import { computeExposure, findGaps, invalidate, loadBillboards, odFlows, reachSummary } from './analytics.js';
-import { parseCsv, parseGeoJson, parsePings } from './ingest.js';
+import { computeExposure, findGaps, invalidate, loadBillboards, loadSegments, odFlows, reachSummary, trafficMode } from './analytics.js';
+import { billboardsFromGeoJson, normaliseBillboardRow, parseCsv, parseGeoJson, parsePings, parseSegments } from './ingest.js';
 
 const NUMERIC = new Set(Object.entries(BILLBOARD_FIELDS).filter(([, t]) => /REAL|INTEGER/.test(t)).map(([k]) => k));
 
 export function createApp(db) {
   const app = express();
   app.use(cors());
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.text({ type: ['text/csv', 'text/plain'], limit: '50mb' }));
+  app.use(express.json({ limit: '300mb' }));
+  app.use(express.text({ type: ['text/csv', 'text/plain'], limit: '300mb' }));
 
   const companyOf = (req) => {
     const v = req.query.companyId ?? req.get('x-company-id');
@@ -113,8 +113,16 @@ export function createApp(db) {
   app.post('/api/billboards/import', (req, res) => {
     const companyId = companyOf(req);
     if (!companyId) return res.status(400).json({ error: 'companyId is required' });
-    const rows = typeof req.body === 'string' ? parseCsv(req.body) : Array.isArray(req.body) ? req.body : [];
-    const results = { created: 0, errors: [] };
+    let rows;
+    try {
+      rows = typeof req.body === 'string' ? parseCsv(req.body).map(normaliseBillboardRow)
+        : Array.isArray(req.body) ? req.body.map(normaliseBillboardRow)
+        : req.body?.type ? billboardsFromGeoJson(req.body) : [];
+    } catch (e) {
+      return res.status(400).json({ error: `could not read file: ${e.message}` });
+    }
+    if (!rows.length) return res.status(400).json({ error: 'no billboards found in the file' });
+    const results = { created: 0, errors: [], assumed_format: rows.filter((r) => r.format_assumed).length };
     db.exec('BEGIN');
     rows.forEach((r, i) => {
       // Unknown CSV columns go into `extra` so no information is lost.
@@ -215,6 +223,41 @@ export function createApp(db) {
     res.status(204).end();
   });
 
+  // ---------- road-segment volumes (from QGIS / AequilibraE / TomTom / counts) ----------
+  app.get('/api/segments', (_req, res) => {
+    res.json(loadSegments(db).map((s) => ({ id: s.id, name: s.name, road_class: s.road_class, vol_ab: s.vol_ab, vol_ba: s.vol_ba, vehicles_per_day: Math.round(s.vol_ab + s.vol_ba), path: s.coords })));
+  });
+  app.get('/api/segments/stats', (_req, res) => {
+    const r = db.prepare('SELECT COUNT(*) AS segments, SUM(vol_ab + vol_ba) AS total_volume, MAX(vol_ab + vol_ba) AS max_volume FROM road_segments').get();
+    res.json({ ...r, mode: trafficMode(db), source_setting: getSetting(db, 'traffic_source', 'auto') });
+  });
+  /** Body: { geojson, options: { volumeField?, abField?, baField?, nameField?, speedField?, multiplier?, occupancy?, replace? } } */
+  app.post('/api/segments/import', (req, res) => {
+    const { geojson, options = {} } = req.body || {};
+    if (!geojson?.type) return res.status(400).json({ error: 'send { geojson, options }' });
+    let parsed;
+    try { parsed = parseSegments(geojson, options); } catch (e) { return res.status(400).json({ error: e.message }); }
+    if (!parsed.rows.length) return res.status(400).json({ error: 'no road segments with a traffic volume above 0 were found' });
+    db.exec('BEGIN');
+    if (options.replace) db.exec('DELETE FROM road_segments');
+    for (const r of parsed.rows) insert(db, 'road_segments', r);
+    db.exec('COMMIT');
+    invalidate();
+    res.json({ imported: parsed.rows.length, skipped: parsed.skipped, used: parsed.used, name_field: parsed.nameField, speed_field: parsed.speedField });
+  });
+  app.delete('/api/segments', (_req, res) => {
+    db.exec('DELETE FROM road_segments');
+    invalidate();
+    res.status(204).end();
+  });
+  app.put('/api/settings/traffic-source', (req, res) => {
+    const v = req.body?.value;
+    if (!['auto', 'trips', 'segments'].includes(v)) return res.status(400).json({ error: 'value must be auto, trips or segments' });
+    setSetting(db, 'traffic_source', v);
+    invalidate();
+    res.json({ value: v, mode: trafficMode(db) });
+  });
+
   // ---------- analytics ----------
   const hours = (req) => ({ hourFrom: clampHour(req.query.hourFrom, 0), hourTo: clampHour(req.query.hourTo, 23) });
 
@@ -236,6 +279,7 @@ export function createApp(db) {
       .all(...(cid ? [cid] : [])).filter((c) => campaignTiming(c, now).state === 'running');
     const occupied = new Set(running.map((c) => c.billboard_id));
     res.json({
+      mode: e.mode,
       ...reachSummary(e, mine.map((p) => p.billboard_id)),
       billboards: bbs.length,
       digital: bbs.filter((b) => b.media_type === 'digital').length,

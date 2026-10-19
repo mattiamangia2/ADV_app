@@ -1,0 +1,154 @@
+{
+ "type": "FeatureCollection",
+ "name": "road_volumes_sample",
+ "note": "Invented traffic volumes on approximate Milan roads, only for testing the importer. Not real counts.",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "link_id": 1,
+    "name": "Corso Buenos Aires",
+    "matrix_ab": 14200,
+    "matrix_ba": 13100,
+    "speed_ab": 30
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      9.2045,
+      45.4745
+     ],
+     [
+      9.21,
+      45.48
+     ],
+     [
+      9.216,
+      45.4855
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "link_id": 2,
+    "name": "Viale Monza",
+    "matrix_ab": 21500,
+    "matrix_ba": 23800,
+    "speed_ab": 40
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      9.216,
+      45.4855
+     ],
+     [
+      9.2205,
+      45.498
+     ],
+     [
+      9.2245,
+      45.511
+     ],
+     [
+      9.229,
+      45.525
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "link_id": 3,
+    "name": "Viale Brianza / Andrea Doria",
+    "matrix_ab": 17300,
+    "matrix_ba": 16900,
+    "speed_ab": 40
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      9.189,
+      45.4855
+     ],
+     [
+      9.196,
+      45.486
+     ],
+     [
+      9.2045,
+      45.486
+     ],
+     [
+      9.216,
+      45.4855
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "link_id": 4,
+    "name": "Viale Abruzzi",
+    "matrix_ab": 19800,
+    "matrix_ba": 20500,
+    "speed_ab": 40
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      9.216,
+      45.4855
+     ],
+     [
+      9.229,
+      45.48
+     ],
+     [
+      9.239,
+      45.476
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "link_id": 5,
+    "name": "Viale Fulvio Testi",
+    "matrix_ab": 26400,
+    "matrix_ba": 28900,
+    "speed_ab": 50
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      9.1977,
+      45.4878
+     ],
+     [
+      9.201,
+      45.5
+     ],
+     [
+      9.208,
+      45.515
+     ],
+     [
+      9.214,
+      45.532
+     ]
+    ]
+   }
+  }
+ ]
+}

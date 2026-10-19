@@ -8,7 +8,7 @@ import type { PickingInfo } from '@deck.gl/core';
 import { Map } from 'react-map-gl/maplibre';
 import type { Ctx } from '../App';
 import { api } from '../lib/api';
-import type { Billboard, Flow, Gap, Metrics, Trip } from '../lib/types';
+import type { Billboard, Flow, Gap, Metrics, Segment, Trip } from '../lib/types';
 import { ROUTE_FIT, SEQ_BLUE, SERIES, compact, hexToRgb, hourLabel, nf } from '../lib/format';
 import BillboardDetails from '../components/BillboardDetails';
 import BillboardForm from '../components/BillboardForm';
@@ -48,7 +48,7 @@ const CONTROLLER = { type: WheelTiltController, dragRotate: true, touchRotate: t
 const readPref = (k: string, d: string) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
 const INITIAL_VIEW = { longitude: 9.19, latitude: 45.4642, zoom: 11.3, pitch: 35, bearing: 0 };
 
-type Layers = { heatmap: boolean; hexagons: boolean; trips: boolean; flows: boolean; billboards: boolean; gaps: boolean };
+type Layers = { roads: boolean; heatmap: boolean; hexagons: boolean; trips: boolean; flows: boolean; billboards: boolean; gaps: boolean };
 type ColorBy = 'company' | 'route_fit';
 type Pt = { position: [number, number]; weight: number; hour: number };
 
@@ -75,9 +75,11 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
   const [metrics, setMetrics] = useState<Metrics[]>([]);
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [flows, setFlows] = useState<Flow[]>([]);
+  const [segments, setSegments] = useState<Segment[]>([]);
+  const [mode, setMode] = useState<'trips' | 'segments'>('trips');
   const [basemap, setBasemap] = useState(() => readPref('basemap', 'dark'));
   useEffect(() => { try { localStorage.setItem('basemap', basemap); } catch { /* ignore */ } }, [basemap]);
-  const [layers, setLayers] = useState<Layers>({ heatmap: true, hexagons: false, trips: false, flows: false, billboards: true, gaps: false });
+  const [layers, setLayers] = useState<Layers>({ roads: true, heatmap: true, hexagons: false, trips: false, flows: false, billboards: true, gaps: false });
   const [colorBy, setColorBy] = useState<ColorBy>('route_fit');
   const [onlyMine, setOnlyMine] = useState(false);
   const [hours, setHours] = useState<[number, number]>([0, 23]);
@@ -94,6 +96,7 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
 
   useEffect(() => { api.trips({ limit: 5000 }).then(setTrips); api.flows().then((f) => setFlows(f.slice(0, 150))); }, [version]);
   useEffect(() => { api.billboards().then(setBillboards); }, [version]);
+  useEffect(() => { api.segments().then(setSegments); api.segmentStats().then((st) => setMode(st.mode)); }, [version]);
   useEffect(() => { api.metrics(null, { hourFrom: hours[0], hourTo: hours[1] }).then(setMetrics); }, [version, hours]);
   useEffect(() => { api.gaps(companyId, companyId ? undefined : 'market').then(setGaps); }, [version, companyId]);
 
@@ -126,7 +129,18 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
     }
     return pts;
   }, [trips]);
-  const points = useMemo(() => allPoints.filter((p) => inHours(p.hour)), [allPoints, hours]);
+  // With imported road volumes, the heatmap samples points along each road weighted by its volume.
+  const segmentPoints = useMemo<Pt[]>(() => {
+    const pts: Pt[] = [];
+    for (const s of segments) for (let i = 0; i < s.path.length - 1; i++) {
+      const [a, b] = [s.path[i], s.path[i + 1]];
+      const n = Math.max(1, Math.round(Math.hypot((b[0] - a[0]) * 78000, (b[1] - a[1]) * 111000) / 80));
+      for (let k = 0; k < n; k++) pts.push({ position: [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n], weight: s.vehicles_per_day / 100, hour: -1 });
+    }
+    return pts;
+  }, [segments]);
+  const points = useMemo(() => (mode === 'segments' ? segmentPoints : allPoints.filter((p) => inHours(p.hour))), [mode, segmentPoints, allPoints, hours]);
+  const maxSeg = Math.max(1, ...segments.map((s) => s.vehicles_per_day));
 
   const metricById = useMemo(() => new globalThis.Map(metrics.map((m) => [m.billboard_id, m])), [metrics]);
   const companyColor = useMemo(() => {
@@ -143,6 +157,12 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
   const tripData = useMemo(() => trips.map((t) => ({ path: t.path.map((p) => [p[0], p[1]] as [number, number]), ts: t.path.map((p) => secOfDay(p[2])) })), [trips]);
 
   const deckLayers = [
+    layers.roads && segments.length > 0 && new PathLayer<Segment>({
+      id: 'roads', data: segments, getPath: (d) => d.path,
+      getColor: (d) => { const t = Math.sqrt(d.vehicles_per_day / maxSeg); const c = SEQ_BLUE[Math.min(SEQ_BLUE.length - 1, 1 + Math.floor(t * (SEQ_BLUE.length - 1)))]; return [...c, 230] as [number, number, number, number]; },
+      getWidth: (d) => 1 + 7 * Math.sqrt(d.vehicles_per_day / maxSeg), widthUnits: 'pixels', capRounded: true, jointRounded: true, pickable: true,
+      updateTriggers: { getColor: [maxSeg], getWidth: [maxSeg] },
+    }),
     layers.heatmap && new HeatmapLayer<Pt>({
       id: 'heat', data: points, getPosition: (d) => d.position, getWeight: (d) => d.weight,
       radiusPixels: 28, intensity: 1, threshold: 0.04, colorRange: SEQ_BLUE, aggregation: 'SUM',
@@ -210,6 +230,7 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
         {b.current_campaign && <div className="hint">Now: {b.current_campaign.advertiser}</div>}</>;
     } else if (hover.layer?.id === 'gaps') body = <><b>Opportunity spot</b><div>{nf(o.vehicles_per_day)} vehicles/day, no {companyId ? 'own ' : ''}billboard within 350 m</div></>;
     else if (hover.layer?.id === 'flows') body = <><b>Flow</b><div>{nf(o.per_day, 1)} vehicle trips/day (sample)</div></>;
+    else if (hover.layer?.id === 'roads') body = <><b>{o.name || 'Road segment'}</b><div>{nf(o.vehicles_per_day)} vehicles/day</div><div className="hint">{nf(o.vol_ab)} one way · {nf(o.vol_ba)} the other</div></>;
     else if (hover.layer?.id === 'hex') body = <><b>Traffic cell</b><div>{nf(o.elevationValue)} weighted GPS points</div></>;
     if (!body) return null;
     return <div className="tooltip" style={{ left: hover.x + 12, top: hover.y + 12 }}>{body}</div>;
@@ -246,7 +267,8 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
       {panelOpen && <div className="panel left">
         <section>
           <div className="row" style={{ justifyContent: 'space-between' }}><h3>Layers</h3><button className="btn small" onClick={() => setPanelOpen(false)} aria-label="Hide panel">Hide</button></div>
-          {toggle('heatmap', 'Traffic heatmap', 'Density of vehicle GPS points, weighted by panel expansion')}
+          {segments.length > 0 && toggle('roads', 'Road traffic volumes', 'Imported vehicles per day on each road segment')}
+          {toggle('heatmap', 'Traffic heatmap', mode === 'segments' ? 'From imported road volumes' : 'Density of vehicle GPS points, weighted by panel expansion')}
           {toggle('hexagons', '3D traffic hexagons')}
           {toggle('trips', 'Animated trips')}
           {toggle('flows', 'Origin → destination flows')}
@@ -282,7 +304,8 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
               <button key={l} className="btn small" onClick={() => setHours([a, b])}>{l}</button>
             ))}
           </div>
-          <div className="hint" style={{ marginTop: 6 }}>Filters the heatmap and recomputes billboard exposure.</div>
+          <div className="hint" style={{ marginTop: 6 }}>{mode === 'segments' ? 'Recomputes billboard exposure using a typical daily traffic profile.' : 'Filters the heatmap and recomputes billboard exposure.'}</div>
+          <div className="hint" style={{ marginTop: 4 }}>Traffic source: <b>{mode === 'segments' ? 'road volumes' : 'GPS trips'}</b></div>
         </section>
         <section>
           <h3>Billboards</h3>
@@ -301,7 +324,7 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
               : [...companies].sort((a, b) => a.id - b.id).map((c, i) => <div key={c.id} className="legend-row"><span className="dot" style={{ background: SERIES[i % SERIES.length] }} />{c.name}</div>)}
             <div className="hint" style={{ marginTop: 4 }}>Dot size = impressions per day.</div>
           </div>
-          {(layers.heatmap || layers.hexagons) && (
+          {(layers.heatmap || layers.hexagons || (layers.roads && segments.length > 0)) && (
             <div style={{ marginTop: 10 }}>
               <div className="hint">Traffic density</div>
               <div className="ramp" />

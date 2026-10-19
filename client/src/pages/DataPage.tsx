@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Ctx } from '../App';
 import { api } from '../lib/api';
 import { compact, nf } from '../lib/format';
+import SegmentImport from '../components/SegmentImport';
 
 export default function DataPage({ version, bump }: Ctx) {
   const [stats, setStats] = useState<Awaited<ReturnType<typeof api.tripStats>> | null>(null);
@@ -34,8 +35,10 @@ export default function DataPage({ version, bump }: Ctx) {
         <div className="kpi"><div className="label">Period</div><div className="value" style={{ fontSize: 14 }}>{stats?.first?.slice(0, 10) ?? '—'} → {stats?.last?.slice(0, 10) ?? '—'}</div></div>
       </div>
 
+      <SegmentImport onDone={bump} />
+
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Upload trips</h3>
+        <h3 style={{ marginTop: 0 }}>Upload GPS trips</h3>
         <div className="row">
           <label className="btn primary">{busy ? 'Uploading…' : 'Choose file (.geojson / .json / .csv)'}
             <input type="file" hidden accept=".geojson,.json,.csv" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
@@ -49,7 +52,7 @@ export default function DataPage({ version, bump }: Ctx) {
         <p><b>GeoJSON</b> — a FeatureCollection of LineStrings. Put the time of each vertex in <code>properties.timestamps</code> (ISO or Unix seconds) or as the 3rd coordinate value. Optional properties: <code>weight</code>, <code>occupancy</code>, <code>vehicle_type</code>.</p>
         <p className="hint"><b>weight</b> = how many real vehicles one sample trip stands for (the panel expansion factor from your data provider). <b>occupancy</b> = people per vehicle (default 1.3).</p>
         <p className="hint">Typical sources: connected-car / fleet telematics, navigation-app panels, mobile-location SDK data, or your own GPS loggers. Always use anonymised, aggregated data that you are allowed to process under GDPR.</p>
-        <p className="hint">Sample files are in the repository’s <code>samples/</code> folder.</p>
+        <p className="hint">Sample files are in the repository’s <code>samples/</code> folder. Step-by-step QGIS instructions: <code>docs/QGIS_GUIDE.md</code>.</p>
       </div>
     </div>
   );

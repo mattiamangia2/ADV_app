@@ -110,6 +110,20 @@ CREATE TABLE IF NOT EXISTS trips (
   distance_m REAL,
   coords TEXT NOT NULL             -- JSON [[lon, lat, unixSeconds], ...]
 );
+-- Traffic volumes per road segment (e.g. exported from QGIS / AequilibraE / TomTom / counts).
+CREATE TABLE IF NOT EXISTS road_segments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  road_class TEXT,
+  vol_ab REAL NOT NULL DEFAULT 0,  -- vehicles/day travelling in the drawing direction of the line
+  vol_ba REAL NOT NULL DEFAULT 0,  -- vehicles/day travelling against it
+  speed_kmh REAL,
+  occupancy REAL DEFAULT 1.3,
+  source TEXT,
+  props TEXT DEFAULT '{}',         -- original attributes
+  coords TEXT NOT NULL             -- JSON [[lon, lat], ...]
+);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 `);
 }
 
@@ -140,4 +154,12 @@ export function update(db, table, id, row) {
   const extra = table === 'billboards' ? ", updated_at = datetime('now')" : '';
   const sql = `UPDATE ${table} SET ${keys.map((k) => `${k} = ?`).join(', ')}${extra} WHERE id = ?`;
   db.prepare(sql).run(...keys.map((k) => row[k]), id);
+}
+
+export function getSetting(db, key, fallback = null) {
+  const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return r ? r.value : fallback;
+}
+export function setSetting(db, key, value) {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, String(value));
 }

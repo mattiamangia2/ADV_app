@@ -35,10 +35,15 @@ export type Meta = { formats: Record<string, FormatDef>; statuses: string[]; roa
 export type Trip = { id: number; weight: number; vehicle_type: string; started_at: string; distance_m: number; path: [number, number, number][] };
 
 export type Summary = {
-  days: number; vehicle_trips_per_day: number; reached_trips_per_day: number; reach_pct: number; avg_frequency: number;
+  mode: 'trips' | 'segments';
+  days: number; vehicle_trips_per_day: number | null; reached_trips_per_day: number | null; reach_pct: number | null; avg_frequency: number | null;
   billboards: number; digital: number; surface_m2: number; occupancy_pct: number; running_campaigns: number;
   monthly_list_price: number; impressions_per_month: number; avg_cpm: number | null; off_route: number; expiring_30d: number;
 };
 
 export type Gap = { lat: number; lon: number; vehicles_per_day: number };
 export type Flow = { from: [number, number]; to: [number, number]; count: number; per_day: number };
+
+export type Segment = { id: number; name: string | null; road_class: string | null; vol_ab: number; vol_ba: number; vehicles_per_day: number; path: [number, number][] };
+export type SegmentStats = { segments: number; total_volume: number | null; max_volume: number | null; mode: 'trips' | 'segments'; source_setting: 'auto' | 'trips' | 'segments' };
+export type SegmentImportOptions = { volumeField?: string; abField?: string; baField?: string; nameField?: string; speedField?: string; multiplier?: number; occupancy?: number; replace?: boolean };

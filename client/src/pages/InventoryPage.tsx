@@ -39,8 +39,12 @@ export default function InventoryPage({ meta, companies, companyId, version, bum
 
   const importCsv = async (file: File) => {
     if (!companyId) return;
-    const res = await api.importBillboards(companyId, await file.text());
-    setMsg(`Imported ${res.created} billboards${res.errors.length ? `, ${res.errors.length} rows rejected (first: row ${res.errors[0].row}: ${res.errors[0].errors.join(', ')})` : ''}.`);
+    try {
+      const res = await api.importBillboards(companyId, await file.text(), file.name.toLowerCase().endsWith('.csv'));
+      setMsg(`Imported ${res.created} billboards${res.assumed_format ? ` (${res.assumed_format} without a known format were set to 6×3 — check them)` : ''}${res.errors.length ? `, ${res.errors.length} rows rejected (first: row ${res.errors[0].row}: ${res.errors[0].errors.join(', ')})` : ''}.`);
+    } catch (e) {
+      setMsg(`Import failed: ${(e as Error).message}`);
+    }
     bump(); reloadCompanies();
   };
   const exportCsv = () => {
@@ -69,7 +73,7 @@ export default function InventoryPage({ meta, companies, companyId, version, bum
           {companyId ? (
             <>
               <button className="btn" onClick={template}>CSV template</button>
-              <label className="btn">Import CSV<input type="file" accept=".csv,text/csv" hidden onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} /></label>
+              <label className="btn" title="CSV, or GeoJSON exported from QGIS / QuickOSM (EPSG:4326)">Import CSV / GeoJSON<input type="file" accept=".csv,.geojson,.json,text/csv" hidden onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} /></label>
               <button className="btn primary" onClick={() => setEditing('new')}>+ New billboard</button>
             </>
           ) : <span className="hint">Pick a company (top right) to add or import billboards.</span>}
