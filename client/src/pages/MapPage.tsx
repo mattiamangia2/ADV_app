@@ -5,7 +5,7 @@ import { HeatmapLayer, HexagonLayer } from '@deck.gl/aggregation-layers';
 import { TripsLayer } from '@deck.gl/geo-layers';
 import { MapController } from '@deck.gl/core';
 import type { PickingInfo } from '@deck.gl/core';
-import { Map } from 'react-map-gl/maplibre';
+import { AttributionControl, Map } from 'react-map-gl/maplibre';
 import type { Ctx } from '../App';
 import { api } from '../lib/api';
 import type { Billboard, Flow, Gap, Metrics, Segment, Trip } from '../lib/types';
@@ -30,6 +30,7 @@ const satellite = {
   },
   layers: [{ id: 'esri', type: 'raster' as const, source: 'esri' }, { id: 'labels', type: 'raster' as const, source: 'labels' }],
 };
+const OSM_CREDIT = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>';
 const BASEMAPS: Record<string, { label: string; style: any }> = {
   dark: { label: 'Dark (streets)', style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' },
   streets: { label: 'Streets (colour)', style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json' },
@@ -259,7 +260,10 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
         onHover={setHover}
         getCursor={({ isDragging, isHovering }) => (pickMode ? 'crosshair' : isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab')}
       >
-        <Map mapStyle={BASEMAPS[basemap]?.style ?? BASEMAPS.dark.style} />
+        <Map mapStyle={BASEMAPS[basemap]?.style ?? BASEMAPS.dark.style} attributionControl={false}>
+          {/* Required credits, always visible (OpenStreetMap ODbL; base-map providers add their own). */}
+          <AttributionControl compact={false} customAttribution={OSM_CREDIT} />
+        </Map>
       </DeckGL>
       {tooltip()}
 

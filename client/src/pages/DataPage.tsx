@@ -54,6 +54,16 @@ export default function DataPage({ version, bump }: Ctx) {
         <p className="hint">Typical sources: connected-car / fleet telematics, navigation-app panels, mobile-location SDK data, or your own GPS loggers. Always use anonymised, aggregated data that you are allowed to process under GDPR.</p>
         <p className="hint">Sample files are in the repository’s <code>samples/</code> folder. Step-by-step QGIS instructions: <code>docs/QGIS_GUIDE.md</code>.</p>
       </div>
+    
+      <div className="card" style={{ marginTop: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Data sources &amp; credits</h3>
+        <ul className="hint" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+          <li>Road network and imported OpenStreetMap features: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>, licensed under the Open Database License (ODbL).</li>
+          <li>Base maps: © CARTO (dark / streets / light) and © Esri, Maxar, Earthstar Geographics (satellite).</li>
+          <li>Demo traffic and demo billboards are simulated — not real counts or real inventory.</li>
+          <li>Full register of sources and licences: <code>docs/DATA_SOURCES.md</code>.</li>
+        </ul>
+      </div>
     </div>
   );
 }

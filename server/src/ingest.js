@@ -219,6 +219,8 @@ export function normaliseBillboardRow(r) {
     out.name = [adv ? `OSM ${adv}` : isShelter ? 'Bus shelter' : 'Billboard', where, id && `#${id}`].filter(Boolean).join(' ');
   }
   if (out.lit === 'yes' && out.illuminated == null) out.illuminated = 1;
+  // Keep the licence with the data: OpenStreetMap-derived records must credit OSM (ODbL).
+  if (out.full_id || out.osm_id || out['@id'] || out.osm_type || out.advertising) out.data_source = out.data_source || 'OpenStreetMap contributors (ODbL)';
   if (out.direction != null && out.facing_azimuth == null && Number.isFinite(num(out.direction))) out.facing_azimuth = num(out.direction) % 360;
   if (out.operator && !out.code) out.code = String(out.operator).slice(0, 40);
   return out;

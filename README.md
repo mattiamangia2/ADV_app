@@ -126,6 +126,8 @@ docs/     QGIS guide
 7. **Proof of posting**: photo uploads with timestamps/geotag per campaign; digital play logs.
 8. **Reports**: export a campaign PDF (map + reach + CPM) for clients.
 
-## Data credits
+## Data credits & licences
 
-Road network © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL). Base maps © CARTO, © OpenStreetMap contributors; satellite imagery © Esri, Maxar, Earthstar Geographics.
+Road network and imported OSM features © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL). The credit is always visible on the map. Base maps © CARTO, © OpenStreetMap contributors; satellite imagery © Esri, Maxar, Earthstar Geographics.
+
+⚠️ CARTO and Esri base maps need a commercial licence for a paid product. Every source, its licence and what to fix before going commercial is tracked in **[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)**.

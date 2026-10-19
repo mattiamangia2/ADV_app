@@ -100,7 +100,57 @@ out;
 
 ## 3. Traffic counts → road volumes
 
-Use this when you have counts at some points: ANAS "TGM" stations, municipal counts, your own manual counts, or a provider's point data.
+Use this when you have **traffic counts**: numbers of vehicles measured passing a specific point of a road.
+
+### What a traffic count is
+
+A count says: *"at this point of this road, X vehicles pass per day (or per hour), in this direction"*. It is measured by sensors under the asphalt (induction loops, *spire*), radar or cameras at the roadside, or a person counting.
+
+What a useful count file contains:
+
+| Column | Example | Needed? |
+|---|---|---|
+| Station / section ID | `MI-0123` | Useful |
+| Location | lat/lon, or road + km (`SS36 km 12+300`) | **Yes** |
+| Vehicles per day | `TGM = 54 300` | **Yes** (or per hour) |
+| Direction | `Nord` / `Sud`, `carreggiata A/B` | Nice to have |
+| Vehicle type | `leggeri` / `pesanti` | Nice to have |
+| Period | `2024`, `marzo 2025`, `7:00–9:00` | **Yes**: know what the number means |
+
+### Key words (Italian sources use these)
+
+| Term | Meaning |
+|---|---|
+| **TGM** | *Traffico Giornaliero Medio*: average vehicles per day. This is the number you want. |
+| **TGMA** / **TGMA feriale** | Average daily traffic over the year / on weekdays |
+| **flussi veicolari**, **flussi di traffico** | Traffic flows |
+| **conteggi di traffico**, **rilievi di traffico** | Traffic counts / surveys |
+| **sezioni di conteggio**, **postazioni di rilevamento** | Counting stations |
+| **spire induttive** | Induction-loop sensors (the most common source) |
+| **ora di punta** | Peak hour (if a count is per peak hour, choose "peak hour ×10" when importing) |
+| **veicoli equivalenti** | Weighted vehicles (a truck = 2–3 cars): fine to use as a volume |
+
+### Where to look
+
+| Source | What you'll find | Search for |
+|---|---|---|
+| **ANAS**, stradeanas.it | Monthly *Osservatorio del Traffico* bulletins (PDF) from 1,400+ counting sections on state roads (SS). Around Milan this covers the main state roads, not city streets. | "ANAS Osservatorio del Traffico", "ANAS TGM sezioni di conteggio". For station-level tables, contact ANAS. |
+| **Comune di Milano**, dati.comune.milano.it | Area C gate entries (daily, and every 30 minutes for some months), Area B. These are entries into a zone, not counts per road, so use them to check totals. | On the portal: "Area C ingressi", "varchi", "traffico", "flussi", "spire" |
+| **AMAT** (Milan mobility agency) | Traffic counts made for city plans (PUMS) | "AMAT Milano conteggi traffico", "PUMS Milano flussi di traffico". Often in plan PDFs, otherwise ask AMAT. |
+| **Città metropolitana di Milano** | Counts and speed sensors on provincial roads (SP: Paullese, Rivoltana, Cassanese…) | "Città metropolitana Milano flussi traffico strade provinciali", "Progetto Sicurezza Milano Metropolitana". Usually by request to *Area Viabilità*. |
+| **Milano Serravalle – Milano Tangenziali**, **Autostrade per l'Italia**, **AISCAT** | Traffic on the Tangenziali and motorways around Milan | "Milano Serravalle traffico tangenziali", "AISCAT traffico autostradale mensile" |
+| **Regione Lombardia**, dati.lombardia.it | Regional mobility datasets and matrices | "traffico", "flussi", "matrice origine destinazione" |
+| **Your own counts** | Exactly the roads in front of your billboards | Count vehicles in 15-minute slots by hand or from a video (AI counting apps exist), or put a **Telraam** sensor (about €150–250) in a window facing the road. It counts cars, bikes and pedestrians continuously. |
+| **Providers** (TomTom, HERE, INRIX) | Volumes or speeds for every road segment, already as lines | Ask for "traffic volumes / AADT per segment, Milan, shapefile or GeoJSON". If you get lines, skip to step 5 below. |
+
+Most public counts come as **PDF or Excel tables** with a road name and km, not coordinates. Turn them into points like this:
+1. Put them in a spreadsheet with columns `name, tgm, lat, lon`.
+2. Find each station on the map (right-click in Google Maps or QGIS to copy the coordinates).
+3. Save the sheet as CSV and continue with step 1 below.
+
+Note each source in `docs/DATA_SOURCES.md` before importing.
+
+### Steps in QGIS
 
 1. **Load the counts.**
    - If they are a CSV: *Layer ▸ Add Layer ▸ Add Delimited Text Layer…*, set X = longitude and Y = latitude, and choose the right CRS.
@@ -184,6 +234,8 @@ This is a modelling project, not a one-click export. Even a rough first version 
 
 ## Data licences
 
-- OpenStreetMap data © OpenStreetMap contributors, **ODbL**: credit it wherever you show it.
-- ISTAT and Comune di Milano open data are mostly **CC-BY 4.0**: credit the source.
+Record every source in **[`DATA_SOURCES.md`](DATA_SOURCES.md)** (licence, credit text, commercial use) before importing it.
+
+- OpenStreetMap: © OpenStreetMap contributors, **ODbL**. Credit it wherever you show it, and read the share-alike note in the register before selling any database that contains OSM data.
+- ISTAT and Comune di Milano open data are mostly **CC BY 4.0**: credit the source.
 - Commercial data (TomTom, HERE, OCTO, telcos) has its own licence. Check whether you may store it and show it to your clients.

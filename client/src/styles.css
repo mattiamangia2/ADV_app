@@ -96,3 +96,6 @@ table.data tr:hover td { background: var(--surface-2); }
   .topbar { gap: 8px; }
 }
 .panel-btn { position: absolute; top: 12px; left: 12px; }
+/* Keep map credits readable on the dark theme */
+.maplibregl-ctrl-attrib { background: rgba(26, 26, 25, 0.8) !important; color: var(--ink-2); font-size: 11px; }
+.maplibregl-ctrl-attrib a { color: var(--ink-2) !important; }
