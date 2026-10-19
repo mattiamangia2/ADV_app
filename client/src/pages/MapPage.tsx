@@ -9,7 +9,7 @@ import { AttributionControl, Map } from 'react-map-gl/maplibre';
 import type { Ctx } from '../App';
 import { api } from '../lib/api';
 import type { Billboard, Flow, Gap, Metrics, Segment, Trip } from '../lib/types';
-import { ROUTE_FIT, SEQ_BLUE, SERIES, compact, hexToRgb, hourLabel, nf } from '../lib/format';
+import { OWNERSHIP, ROUTE_FIT, SEQ_BLUE, SERIES, compact, hexToRgb, hourLabel, nf } from '../lib/format';
 import BillboardDetails from '../components/BillboardDetails';
 import BillboardForm from '../components/BillboardForm';
 
@@ -83,6 +83,7 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
   const [layers, setLayers] = useState<Layers>({ roads: true, heatmap: true, hexagons: false, trips: false, flows: false, billboards: true, gaps: false });
   const [colorBy, setColorBy] = useState<ColorBy>('route_fit');
   const [onlyMine, setOnlyMine] = useState(false);
+  const [showNotOurs, setShowNotOurs] = useState(true);
   const [hours, setHours] = useState<[number, number]>([0, 23]);
   const [selected, setSelected] = useState<Billboard | null>(null);
   const [selectedTrips, setSelectedTrips] = useState<Trip[]>([]);
@@ -150,8 +151,11 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
   }, [companies]);
   const companyName = (id: number) => companies.find((c) => c.id === id)?.name;
   const shownBillboards = useMemo(
-    () => billboards.filter((b) => !onlyMine || !companyId || b.company_id === companyId).map((b) => ({ ...b, metrics: metricById.get(b.id) ?? b.metrics })),
-    [billboards, metricById, onlyMine, companyId],
+    () => billboards
+      .filter((b) => !onlyMine || !companyId || b.company_id === companyId)
+      .filter((b) => showNotOurs || (b.ownership ?? 'owned') === 'owned')
+      .map((b) => ({ ...b, metrics: metricById.get(b.id) ?? b.metrics })),
+    [billboards, metricById, onlyMine, companyId, showNotOurs],
   );
   const maxFlow = Math.max(1, ...flows.map((f) => f.per_day));
   const maxImp = Math.max(1, ...shownBillboards.map((b) => b.metrics.impressions_per_day ?? 0));
@@ -199,11 +203,16 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
       id: 'billboards', data: shownBillboards, getPosition: (d) => [d.lon, d.lat],
       getRadius: (d) => 5 + 9 * Math.sqrt((d.metrics.impressions_per_day ?? 0) / maxImp), radiusUnits: 'pixels',
       getFillColor: (d) => {
-        const c = colorBy === 'company' ? companyColor(d.company_id) : hexToRgb(ROUTE_FIT[d.metrics.route_fit ?? 'off-route'].color);
+        // Sites that exist but aren't ours: always grey, whatever the colour mode.
+        const notOurs = (d.ownership ?? 'owned') !== 'owned';
+        const c = notOurs ? hexToRgb(OWNERSHIP[d.ownership].color)
+          : colorBy === 'company' ? companyColor(d.company_id) : hexToRgb(ROUTE_FIT[d.metrics.route_fit ?? 'off-route'].color);
         const dim = companyId && d.company_id !== companyId ? 90 : 255;
         return [...c, dim] as [number, number, number, number];
       },
-      stroked: true, getLineColor: (d) => (selected?.id === d.id ? [255, 255, 255, 255] : [26, 26, 25, 255]), lineWidthMinPixels: 2,
+      stroked: true,
+      getLineColor: (d) => (selected?.id === d.id ? [255, 255, 255, 255] : d.ownership === 'competitor' ? [195, 194, 183, 255] : [26, 26, 25, 255]),
+      lineWidthMinPixels: 2,
       parameters: { depthCompare: 'always' }, pickable: true, updateTriggers: { getFillColor: [colorBy, companyId, companyColor], getLineColor: [selected?.id], getRadius: [maxImp] },
     }),
     newPos && new ScatterplotLayer({ id: 'newpos', data: [newPos], getPosition: (d: [number, number]) => d, getRadius: 8, radiusUnits: 'pixels', getFillColor: [255, 255, 255, 255] }),
@@ -226,7 +235,8 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
     let body: React.ReactNode = null;
     if (hover.layer?.id === 'billboards') {
       const b = o as Billboard, f = ROUTE_FIT[b.metrics.route_fit ?? 'off-route'];
-      body = <><b>{b.name}</b><div className="hint">{companyName(b.company_id)}</div>
+      const notOurs = (b.ownership ?? 'owned') !== 'owned';
+      body = <><b>{b.name}</b><div className="hint">{notOurs ? `${OWNERSHIP[b.ownership].label}${b.operator_name ? ` · ${b.operator_name}` : ''} (listed by ${companyName(b.company_id)})` : companyName(b.company_id)}</div>
         <div><span style={{ color: f.color }}>{f.icon}</span> {f.label} · {compact(b.metrics.impressions_per_month)} imp./month</div>
         {b.current_campaign && <div className="hint">Now: {b.current_campaign.advertiser}</div>}</>;
     } else if (hover.layer?.id === 'gaps') body = <><b>Opportunity spot</b><div>{nf(o.vehicles_per_day)} vehicles/day, no {companyId ? 'own ' : ''}billboard within 350 m</div></>;
@@ -326,6 +336,9 @@ export default function MapPage({ meta, companies, companyId, version, bump }: C
             {colorBy === 'route_fit'
               ? Object.values(ROUTE_FIT).map((f) => <div key={f.label} className="legend-row"><span style={{ color: f.color, fontSize: 14, width: 10 }}>{f.icon}</span>{f.label}</div>)
               : [...companies].sort((a, b) => a.id - b.id).map((c, i) => <div key={c.id} className="legend-row"><span className="dot" style={{ background: SERIES[i % SERIES.length] }} />{c.name}</div>)}
+            <div className="legend-row"><span className="dot" style={{ background: OWNERSHIP.unknown.color }} />Not ours: operator unknown</div>
+            <div className="legend-row"><span className="dot" style={{ background: OWNERSHIP.competitor.color, boxShadow: '0 0 0 2px #c3c2b7' }} />Competitor site</div>
+            <label className="toggle"><input type="checkbox" checked={showNotOurs} onChange={(e) => setShowNotOurs(e.target.checked)} /> Show sites that aren't ours</label>
             <div className="hint" style={{ marginTop: 4 }}>Dot size = impressions per day.</div>
           </div>
           {(layers.heatmap || layers.hexagons || (layers.roads && segments.length > 0)) && (

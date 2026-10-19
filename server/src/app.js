@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { BILLBOARD_FIELDS, CAMPAIGN_FIELDS, getSetting, insert, pick, setSetting, update } from './db.js';
-import { CAMPAIGN_CATEGORIES, FORMATS, ROAD_TYPES, STATUSES, campaignTiming, withDefaults } from './domain.js';
+import { CAMPAIGN_CATEGORIES, FORMATS, OWNERSHIPS, ROAD_TYPES, STATUSES, campaignTiming, isOwned, withDefaults } from './domain.js';
 import { computeExposure, findGaps, invalidate, loadBillboards, loadSegments, odFlows, reachSummary, trafficMode } from './analytics.js';
 import { billboardsFromGeoJson, normaliseBillboardRow, parseCsv, parseGeoJson, parsePings, parseSegments } from './ingest.js';
 
@@ -20,7 +20,7 @@ export function createApp(db) {
 
   // ---------- meta ----------
   app.get('/api/meta', (_req, res) => {
-    res.json({ formats: FORMATS, statuses: STATUSES, roadTypes: ROAD_TYPES, categories: CAMPAIGN_CATEGORIES, fields: Object.keys(BILLBOARD_FIELDS) });
+    res.json({ formats: FORMATS, statuses: STATUSES, ownerships: OWNERSHIPS, roadTypes: ROAD_TYPES, categories: CAMPAIGN_CATEGORIES, fields: Object.keys(BILLBOARD_FIELDS) });
   });
 
   // ---------- companies ----------
@@ -79,6 +79,8 @@ export function createApp(db) {
     if (!partial || 'lon' in row) if (!isNum(row.lon) || row.lon < -180 || row.lon > 180) errs.push('lon must be a number between -180 and 180');
     for (const k of Object.keys(row)) if (NUMERIC.has(k) && row[k] != null && !isNum(row[k])) errs.push(`${k} must be a number`);
     if ('status' in row && row.status && !STATUSES.includes(row.status)) errs.push(`status must be one of ${STATUSES.join(', ')}`);
+    if ('ownership' in row && row.ownership && !OWNERSHIPS.includes(row.ownership)) errs.push(`ownership must be one of ${OWNERSHIPS.join(', ')}`);
+    if ('format' in row && row.format && !FORMATS[row.format]) errs.push(`unknown format "${row.format}" (use one of ${Object.keys(FORMATS).join(', ')})`);
     if ('facing_azimuth' in row && row.facing_azimuth != null && !(row.facing_azimuth >= 0 && row.facing_azimuth < 360)) errs.push('facing_azimuth must be 0..359');
     return errs;
   };
@@ -122,6 +124,13 @@ export function createApp(db) {
       return res.status(400).json({ error: `could not read file: ${e.message}` });
     }
     if (!rows.length) return res.status(400).json({ error: 'no billboards found in the file' });
+    // ?ownership=unknown marks the whole file as "sites that exist but aren't ours" (a row's own column wins).
+    const defaultOwnership = OWNERSHIPS.includes(req.query.ownership) ? req.query.ownership : 'owned';
+    rows = rows.map((r) => {
+      let ownership = r.ownership || defaultOwnership;
+      if (ownership === 'unknown' && r.operator_name) ownership = 'competitor';
+      return { ...r, ownership };
+    });
     const results = { created: 0, errors: [], assumed_format: rows.filter((r) => r.format_assumed).length };
     db.exec('BEGIN');
     rows.forEach((r, i) => {
@@ -148,6 +157,79 @@ export function createApp(db) {
     if (cid && b.company_id !== cid) { res.status(403).json({ error: 'billboard belongs to another company' }); return null; }
     return b;
   };
+
+  /**
+   * Bulk actions on many billboards at once.
+   * Body: { ids: number[], set?: {field: value}, price_adjust_pct?: number, extra_set?: {key: value},
+   *         add_campaign?: {...}, end_running_campaigns?: boolean, delete?: boolean }
+   */
+  app.post('/api/billboards/bulk', (req, res) => {
+    const cid = companyOf(req);
+    const { ids, set = {}, price_adjust_pct, extra_set, add_campaign, end_running_campaigns } = req.body || {};
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids is required' });
+    const list = ids.map(Number).filter(Boolean);
+    const rows = db.prepare(`SELECT * FROM billboards WHERE id IN (${list.map(() => '?').join(',')})`).all(...list);
+    if (rows.length !== list.length) return res.status(404).json({ error: 'some billboards were not found' });
+    if (cid && rows.some((b) => b.company_id !== cid)) return res.status(403).json({ error: 'some billboards belong to another company' });
+
+    if (req.body.delete) {
+      db.exec('BEGIN');
+      for (const b of rows) db.prepare('DELETE FROM billboards WHERE id = ?').run(b.id);
+      db.exec('COMMIT');
+      invalidate();
+      return res.json({ deleted: rows.length });
+    }
+
+    const row = clean(set);
+    for (const k of ['name', 'lat', 'lon', 'code', 'extra']) delete row[k]; // per-site fields can't be bulk-set
+    const errs = validateBillboard(row, true);
+    if (errs.length) return res.status(400).json({ error: errs.join('; ') });
+    let campaign = null;
+    if (add_campaign) {
+      campaign = pick(add_campaign, CAMPAIGN_FIELDS);
+      if (!campaign.advertiser || !campaign.start_date || !campaign.end_date) return res.status(400).json({ error: 'campaign needs advertiser, start_date and end_date' });
+      if (campaign.end_date < campaign.start_date) return res.status(400).json({ error: 'campaign end_date must be after start_date' });
+    }
+    const pct = Number(price_adjust_pct);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const now = new Date();
+    const result = { updated: rows.length, campaigns_added: 0, campaigns_ended: 0 };
+
+    db.exec('BEGIN');
+    try {
+      for (const b of rows) {
+        const patch = { ...row };
+        if (Number.isFinite(pct) && pct !== 0) {
+          for (const k of ['price_week', 'price_month', 'price_year']) {
+            const base = k in patch ? patch[k] : b[k];
+            if (base != null) patch[k] = Math.round(base * (1 + pct / 100) * 100) / 100;
+          }
+        }
+        if (extra_set && typeof extra_set === 'object') {
+          let ex = {};
+          try { ex = JSON.parse(b.extra || '{}'); } catch { /* keep empty */ }
+          for (const [k, v] of Object.entries(extra_set)) if (k.trim()) { if (v === '' || v == null) delete ex[k.trim()]; else ex[k.trim()] = v; }
+          patch.extra = JSON.stringify(ex);
+        }
+        update(db, 'billboards', b.id, patch);
+        if (end_running_campaigns) {
+          for (const c of db.prepare('SELECT * FROM campaigns WHERE billboard_id = ?').all(b.id)) {
+            if (campaignTiming(c, now).state === 'running') {
+              db.prepare('UPDATE campaigns SET end_date = ? WHERE id = ?').run(c.start_date > yesterday ? c.start_date : yesterday, c.id);
+              result.campaigns_ended++;
+            }
+          }
+        }
+        if (campaign) { insert(db, 'campaigns', { ...campaign, billboard_id: b.id }); result.campaigns_added++; }
+      }
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      return res.status(400).json({ error: e.message });
+    }
+    invalidate();
+    res.json(result);
+  });
 
   app.put('/api/billboards/:id', (req, res) => {
     const b = owned(req, res);
@@ -270,18 +352,22 @@ export function createApp(db) {
   app.get('/api/analytics/summary', (req, res) => {
     const cid = companyOf(req);
     const e = computeExposure(db, hours(req));
-    const mine = e.perBillboard.filter((p) => !cid || p.company_id === cid);
-    const bbs = e.billboards.filter((b) => !cid || b.company_id === cid);
+    // Only sites the company actually owns count towards its inventory figures.
+    const scoped = e.billboards.filter((b) => !cid || b.company_id === cid);
+    const bbs = scoped.filter(isOwned);
+    const ownedIds = new Set(bbs.map((b) => b.id));
+    const mine = e.perBillboard.filter((p) => ownedIds.has(p.billboard_id));
     const monthly = bbs.reduce((s, b) => s + (b.price_month ?? (b.price_year ? b.price_year / 12 : 0)), 0);
     const imps = mine.reduce((s, p) => s + p.impressions_per_month, 0);
     const now = new Date();
     const running = db.prepare(`SELECT c.* FROM campaigns c JOIN billboards b ON b.id = c.billboard_id ${cid ? 'WHERE b.company_id = ?' : ''}`)
-      .all(...(cid ? [cid] : [])).filter((c) => campaignTiming(c, now).state === 'running');
+      .all(...(cid ? [cid] : [])).filter((c) => ownedIds.has(c.billboard_id) && campaignTiming(c, now).state === 'running');
     const occupied = new Set(running.map((c) => c.billboard_id));
     res.json({
       mode: e.mode,
       ...reachSummary(e, mine.map((p) => p.billboard_id)),
       billboards: bbs.length,
+      not_owned: scoped.length - bbs.length,
       digital: bbs.filter((b) => b.media_type === 'digital').length,
       surface_m2: Math.round(bbs.reduce((s, b) => s + (b.surface_m2 || 0), 0)),
       occupancy_pct: bbs.length ? Math.round((occupied.size / bbs.length) * 100) : 0,
@@ -297,7 +383,8 @@ export function createApp(db) {
   app.get('/api/analytics/gaps', (req, res) => {
     const cid = companyOf(req);
     const scope = req.query.scope === 'market' ? null : cid;
-    res.json(findGaps(db, loadBillboards(db, scope), { radiusM: Number(req.query.radius) || 350 }));
+    const sites = loadBillboards(db, scope).filter((b) => req.query.scope === 'market' || isOwned(b));
+    res.json(findGaps(db, sites, { radiusM: Number(req.query.radius) || 350 }));
   });
 
   app.get('/api/analytics/flows', (req, res) => {

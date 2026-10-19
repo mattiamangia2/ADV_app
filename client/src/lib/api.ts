@@ -1,4 +1,4 @@
-import type { Billboard, Company, Flow, Gap, Meta, Metrics, Segment, SegmentImportOptions, SegmentStats, Summary, Trip } from './types';
+import type { Billboard, BulkRequest, BulkResult, Company, Flow, Gap, Meta, Metrics, Segment, SegmentImportOptions, SegmentStats, Summary, Trip } from './types';
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
@@ -30,8 +30,9 @@ export const api = {
   updateBillboard: (id: number, b: Partial<Billboard>) => req<Billboard>(`/api/billboards/${id}`, json('PUT', b)),
   deleteBillboard: (id: number) => req<void>(`/api/billboards/${id}`, { method: 'DELETE' }),
   /** CSV text, or GeoJSON text (e.g. exported from QGIS / QuickOSM). */
-  importBillboards: (companyId: number, text: string, isCsv: boolean) =>
-    req<{ created: number; assumed_format: number; errors: { row: number; errors: string[] }[] }>(`/api/billboards/import${qs({ companyId })}`, { method: 'POST', headers: { 'Content-Type': isCsv ? 'text/csv' : 'application/json' }, body: text }),
+  importBillboards: (companyId: number, text: string, isCsv: boolean, ownership: string = 'owned') =>
+    req<{ created: number; assumed_format: number; errors: { row: number; errors: string[] }[] }>(`/api/billboards/import${qs({ companyId, ownership })}`, { method: 'POST', headers: { 'Content-Type': isCsv ? 'text/csv' : 'application/json' }, body: text }),
+  bulk: (companyId: number, body: BulkRequest) => req<BulkResult>(`/api/billboards/bulk${qs({ companyId })}`, json('POST', body)),
   addCampaign: (billboardId: number, c: Record<string, unknown>) => req(`/api/billboards/${billboardId}/campaigns`, json('POST', c)),
   deleteCampaign: (id: number) => req<void>(`/api/campaigns/${id}`, { method: 'DELETE' }),
 

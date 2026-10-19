@@ -4,7 +4,8 @@ Map how vehicles actually move through a city, cross those routes with billboard
 
 - **Mobility map** (Kepler.gl / CARTO-style, built on deck.gl — the engine Kepler uses): traffic heatmap, 3D hexagons, animated trips on a 24 h clock, origin→destination flow arcs.
 - **Billboards on top**, coloured by how well each site fits the traffic flows (main flow / secondary / marginal / off-route), sized by impressions. Click one to see its readable cone, the trips that pass it, an hourly audience chart, the running campaign and pricing.
-- **Company inventory portal**: each media owner enters and maintains its own sites (form, CSV import/export, custom fields).
+- **Company inventory portal**: each media owner enters and maintains its own sites (form, CSV/GeoJSON import/export, custom fields). **Multi-select with bulk edit**: status, ownership, prices (set, or adjust by %), format and physical details, campaigns (add one to many sites, end running ones), custom fields, delete.
+- **Ownership** (separate from status): *ours*, *not ours: operator unknown*, or *competitor*. Known sites that aren't the company's (e.g. imported from OpenStreetMap) appear as grey dots with their traffic, but are left out of the company's totals.
 - **Analytics**: reach, frequency, impressions, CPM, occupancy, weakest sites, best-value sites, *opportunity spots* (busy places with no billboard nearby), campaigns ending soon, permits expiring.
 
 The app starts with **demo data for Milan**. On first start it downloads Milan's **real road network from OpenStreetMap** (≈10 MB, once, cached in `server/data/`) and simulates a week of car trips along those streets, plus 120 billboards for three fictional companies placed on real roads. The traffic and the billboards are simulated, not real counts or real inventory. Without internet it falls back to a schematic ring-and-radial network.
@@ -99,7 +100,8 @@ Billboards can also be imported from **GeoJSON** (e.g. QuickOSM `advertising=*` 
 | GET/POST | `/api/companies` | list / create companies |
 | GET | `/api/billboards?companyId=` | inventory with metrics and campaigns |
 | POST/PUT/DELETE | `/api/billboards[/:id]?companyId=` | create / update / delete (company can only touch its own) |
-| POST | `/api/billboards/import?companyId=` | bulk CSV, JSON array or GeoJSON points |
+| POST | `/api/billboards/import?companyId=&ownership=` | bulk CSV, JSON array or GeoJSON points (`ownership=unknown` for sites that aren't ours) |
+| POST | `/api/billboards/bulk?companyId=` | `{ ids, set?, price_adjust_pct?, extra_set?, add_campaign?, end_running_campaigns?, delete? }` |
 | POST/DELETE | `/api/billboards/:id/campaigns`, `/api/campaigns/:id` | campaigns |
 | GET/POST/DELETE | `/api/trips`, `/api/trips/import` | GPS trips |
 | GET/POST/DELETE | `/api/segments`, `/api/segments/stats`, `/api/segments/import` | road-segment volumes (`{ geojson, options }`) |

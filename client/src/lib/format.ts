@@ -29,3 +29,10 @@ export const hexToRgb = (hex: string): [number, number, number] => {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
+
+/** Sites that exist but aren't the company's: drawn grey on the map. */
+export const OWNERSHIP: Record<string, { label: string; short: string; color: string }> = {
+  owned: { label: 'Ours', short: 'ours', color: '' },
+  unknown: { label: 'Not ours: operator unknown', short: 'not ours', color: '#898781' },
+  competitor: { label: 'Competitor site', short: 'competitor', color: '#5f5e5a' },
+};

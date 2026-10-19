@@ -222,6 +222,7 @@ export function normaliseBillboardRow(r) {
   // Keep the licence with the data: OpenStreetMap-derived records must credit OSM (ODbL).
   if (out.full_id || out.osm_id || out['@id'] || out.osm_type || out.advertising) out.data_source = out.data_source || 'OpenStreetMap contributors (ODbL)';
   if (out.direction != null && out.facing_azimuth == null && Number.isFinite(num(out.direction))) out.facing_azimuth = num(out.direction) % 360;
-  if (out.operator && !out.code) out.code = String(out.operator).slice(0, 40);
+  if (out.operator && !out.operator_name) out.operator_name = String(out.operator).slice(0, 120);
+  if (out.ownership) out.ownership = String(out.ownership).toLowerCase();
   return out;
 }

@@ -7,6 +7,8 @@ export type Campaign = {
   creative_url?: string; start_date: string; end_date: string; price_paid?: number; notes?: string; timing: CampaignTiming;
 };
 
+export type Ownership = 'owned' | 'unknown' | 'competitor';
+
 export type RouteFit = 'main flow' | 'secondary' | 'marginal' | 'off-route';
 
 export type Metrics = {
@@ -18,7 +20,7 @@ export type Metrics = {
 
 export type Billboard = {
   id: number; company_id: number; code?: string; name: string; format: string; media_type: 'static' | 'digital';
-  status: string; lat: number; lon: number; address?: string; city?: string; road_name?: string; road_type?: string;
+  status: string; ownership: Ownership; operator_name?: string | null; lat: number; lon: number; address?: string; city?: string; road_name?: string; road_type?: string;
   speed_limit_kmh?: number; facing_azimuth: number | null; viewing_angle_deg: number; visibility_m: number;
   height_above_ground_m?: number; width_m?: number; height_m?: number; surface_m2?: number; faces?: number;
   illuminated?: number; material?: string; resolution?: string; slot_seconds?: number; loop_seconds?: number;
@@ -30,14 +32,14 @@ export type Billboard = {
 };
 
 export type FormatDef = { label: string; media_type: string; width_m: number; height_m: number; visibility_m: number };
-export type Meta = { formats: Record<string, FormatDef>; statuses: string[]; roadTypes: string[]; categories: string[]; fields: string[] };
+export type Meta = { formats: Record<string, FormatDef>; statuses: string[]; ownerships: Ownership[]; roadTypes: string[]; categories: string[]; fields: string[] };
 
 export type Trip = { id: number; weight: number; vehicle_type: string; started_at: string; distance_m: number; path: [number, number, number][] };
 
 export type Summary = {
   mode: 'trips' | 'segments';
   days: number; vehicle_trips_per_day: number | null; reached_trips_per_day: number | null; reach_pct: number | null; avg_frequency: number | null;
-  billboards: number; digital: number; surface_m2: number; occupancy_pct: number; running_campaigns: number;
+  billboards: number; not_owned: number; digital: number; surface_m2: number; occupancy_pct: number; running_campaigns: number;
   monthly_list_price: number; impressions_per_month: number; avg_cpm: number | null; off_route: number; expiring_30d: number;
 };
 
@@ -47,3 +49,14 @@ export type Flow = { from: [number, number]; to: [number, number]; count: number
 export type Segment = { id: number; name: string | null; road_class: string | null; vol_ab: number; vol_ba: number; vehicles_per_day: number; path: [number, number][] };
 export type SegmentStats = { segments: number; total_volume: number | null; max_volume: number | null; mode: 'trips' | 'segments'; source_setting: 'auto' | 'trips' | 'segments' };
 export type SegmentImportOptions = { volumeField?: string; abField?: string; baField?: string; nameField?: string; speedField?: string; multiplier?: number; occupancy?: number; replace?: boolean };
+
+export type BulkRequest = {
+  ids: number[];
+  set?: Record<string, unknown>;
+  price_adjust_pct?: number;
+  extra_set?: Record<string, string>;
+  add_campaign?: Record<string, unknown>;
+  end_running_campaigns?: boolean;
+  delete?: boolean;
+};
+export type BulkResult = { updated?: number; deleted?: number; campaigns_added?: number; campaigns_ended?: number };

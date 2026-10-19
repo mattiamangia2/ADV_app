@@ -13,6 +13,8 @@ export const BILLBOARD_FIELDS = {
   format: 'TEXT NOT NULL',         // see FORMATS
   media_type: "TEXT NOT NULL DEFAULT 'static'", // static | digital
   status: "TEXT NOT NULL DEFAULT 'available'",  // available | booked | maintenance | inactive
+  ownership: "TEXT NOT NULL DEFAULT 'owned'",   // owned | unknown (site known, not ours, operator unknown) | competitor
+  operator_name: 'TEXT',           // who runs the site when it isn't ours (e.g. from OSM "operator")
   // Location & orientation
   lat: 'REAL NOT NULL',
   lon: 'REAL NOT NULL',
@@ -73,6 +75,14 @@ export function openDb(file = DB_PATH) {
   return db;
 }
 
+/** Add columns introduced after a database was created (SQLite ALTER TABLE ADD COLUMN). */
+function addMissingColumns(db, table, fields) {
+  const have = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
+  for (const [k, type] of Object.entries(fields)) {
+    if (!have.has(k)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${k} ${type}`);
+  }
+}
+
 function migrate(db) {
   const bbCols = Object.entries(BILLBOARD_FIELDS).map(([k, t]) => `${k} ${t}`).join(',\n  ');
   const cpCols = Object.entries(CAMPAIGN_FIELDS).map(([k, t]) => `${k} ${t}`).join(',\n  ');
@@ -125,6 +135,8 @@ CREATE TABLE IF NOT EXISTS road_segments (
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 `);
+  addMissingColumns(db, 'billboards', BILLBOARD_FIELDS);
+  addMissingColumns(db, 'campaigns', CAMPAIGN_FIELDS);
 }
 
 /** Keep only known keys, coerce booleans/objects for SQLite. */

@@ -12,7 +12,8 @@ export default function AnalyticsPage({ meta, companies, companyId, version }: C
 
   useEffect(() => {
     api.summary(companyId).then(setS);
-    api.billboards(companyId).then(setRows);
+    // Analytics are about the company's own sites; not-ours sites are only mapped.
+    api.billboards(companyId).then((r) => setRows(r.filter((b) => (b.ownership ?? 'owned') === 'owned')));
     api.gaps(companyId, companyId ? undefined : 'market').then(setGaps);
   }, [companyId, version]);
 
@@ -39,7 +40,7 @@ export default function AnalyticsPage({ meta, companies, companyId, version }: C
         Traffic source: <b>{s.mode === 'segments' ? 'road-segment volumes (imported)' : 'GPS trips'}</b> — change it on the Mobility data tab.
       </p>
       <div className="kpis">
-        {kpi('Billboards', nf(s.billboards), `${s.digital} digital · ${nf(s.surface_m2)} m²`)}
+        {kpi('Billboards', nf(s.billboards), `${s.digital} digital · ${nf(s.surface_m2)} m²${s.not_owned ? ` · +${s.not_owned} known sites not ours (excluded)` : ''}`)}
         {s.reach_pct == null
           ? kpi('Daily reach', 'n/a', 'needs GPS trips — road volumes can’t tell which vehicles are the same')
           : kpi('Daily reach', `${nf(s.reach_pct, 1)}%`, `${compact(s.reached_trips_per_day)} of ${compact(s.vehicle_trips_per_day)} vehicle trips/day`)}

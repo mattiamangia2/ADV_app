@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import type { Billboard, Meta } from '../lib/types';
-import { compact, hourLabel, money, nf } from '../lib/format';
+import { OWNERSHIP, compact, hourLabel, money, nf } from '../lib/format';
 import HourlyChart from './HourlyChart';
 import RouteFitBadge from './RouteFitBadge';
 
@@ -28,6 +28,9 @@ export default function BillboardDetails({ b, meta, companyName, hours, onEdit, 
       <section>
         <div className="row" style={{ margin: '10px 0' }}>
           <RouteFitBadge fit={m.route_fit} />
+          {(b.ownership ?? 'owned') !== 'owned' && (
+            <span className="badge"><span className="dot" style={{ background: OWNERSHIP[b.ownership].color }} />{OWNERSHIP[b.ownership].label}{b.operator_name ? ` · ${b.operator_name}` : ''}</span>
+          )}
           <span className="badge">{b.status}</span>
           {b.media_type === 'digital' && <span className="badge">digital</span>}
         </div>

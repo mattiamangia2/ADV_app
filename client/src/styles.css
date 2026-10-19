@@ -99,3 +99,8 @@ table.data tr:hover td { background: var(--surface-2); }
 /* Keep map credits readable on the dark theme */
 .maplibregl-ctrl-attrib { background: rgba(26, 26, 25, 0.8) !important; color: var(--ink-2); font-size: 11px; }
 .maplibregl-ctrl-attrib a { color: var(--ink-2) !important; }
+.bulk-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; margin-bottom: 12px; position: sticky; top: 0; z-index: 3; border-color: var(--accent); }
+table.data tr.selected td { background: rgba(57, 135, 229, 0.12); }
+table.data.bulk td { border-bottom: 1px solid var(--grid); padding: 6px 8px; vertical-align: middle; }
+table.data.bulk tr.on td { background: rgba(57, 135, 229, 0.08); }
+table.data.bulk input, table.data.bulk select, table.data.bulk textarea { width: 100%; }

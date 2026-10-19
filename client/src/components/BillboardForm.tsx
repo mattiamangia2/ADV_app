@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../lib/api';
 import type { Billboard, Campaign, Meta } from '../lib/types';
-import { money } from '../lib/format';
+import { OWNERSHIP, money } from '../lib/format';
 
 type Draft = Record<string, any>;
 type Field = { k: string; label: string; type?: 'number' | 'text' | 'date' | 'select' | 'textarea' | 'checkbox' | 'url'; options?: [string, string][]; hint?: string; step?: string };
@@ -12,7 +12,7 @@ export default function BillboardForm({ meta, companyId, initial, onClose, onSav
   meta: Meta; companyId: number; initial: Partial<Billboard>; onClose: () => void; onSaved: (b: Billboard) => void;
 }) {
   const isNew = !initial.id;
-  const [d, setD] = useState<Draft>(() => ({ status: 'available', currency: 'EUR', viewing_angle_deg: 60, faces: 1, ...initial }));
+  const [d, setD] = useState<Draft>(() => ({ status: 'available', ownership: 'owned', currency: 'EUR', viewing_angle_deg: 60, faces: 1, ...initial }));
   const [extra, setExtra] = useState<[string, string][]>(() => Object.entries(initial.extra || {}).filter(([k]) => k !== 'demo').map(([k, v]) => [k, String(v)]));
   const [campaigns, setCampaigns] = useState<Campaign[]>(initial.campaigns || []);
   const [newCp, setNewCp] = useState<Draft>({});
@@ -94,6 +94,8 @@ export default function BillboardForm({ meta, companyId, initial, onClose, onSav
             </label>
             {input({ k: 'media_type', label: 'Media type', type: 'select', options: [['static', 'Static (paper/vinyl)'], ['digital', 'Digital (screen)']] })}
             {input({ k: 'status', label: 'Status', type: 'select', options: meta.statuses.map((s) => [s, s]) })}
+            {input({ k: 'ownership', label: 'Ownership', type: 'select', options: meta.ownerships.map((o) => [o, OWNERSHIP[o]?.label ?? o]), hint: 'Not-ours sites show grey on the map and stay out of your totals' })}
+            {d.ownership && d.ownership !== 'owned' && input({ k: 'operator_name', label: 'Operator (who runs it)' })}
           </div>
         </fieldset>
 

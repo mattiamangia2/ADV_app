@@ -15,6 +15,9 @@ export const FORMATS = {
 };
 
 export const STATUSES = ['available', 'booked', 'maintenance', 'inactive'];
+/** Whether a site belongs to the company. Not-ours sites are mapped for market knowledge only. */
+export const OWNERSHIPS = ['owned', 'unknown', 'competitor'];
+export const isOwned = (b) => (b.ownership ?? 'owned') === 'owned';
 export const ROAD_TYPES = ['motorway', 'arterial', 'urban', 'local'];
 export const CAMPAIGN_CATEGORIES = [
   'Automotive', 'Retail', 'Food & Beverage', 'Telecom', 'Finance', 'Fashion',
