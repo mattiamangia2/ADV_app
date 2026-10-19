@@ -4,13 +4,16 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node --watch --no-warnings=ExperimentalWarning src/index.js",
-    "start": "node --no-warnings=ExperimentalWarning src/index.js",
+    "dev": "node --watch --no-warnings=ExperimentalWarning src/start.js",
+    "start": "node --no-warnings=ExperimentalWarning src/start.js",
     "seed": "node --no-warnings=ExperimentalWarning src/seed.js --reset",
     "test": "node --no-warnings=ExperimentalWarning --test"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=22.5"
   }
 }
