@@ -7,6 +7,7 @@
 //     Rows are grouped by trip_id and sorted by time.
 
 import { haversine } from './geo.js';
+import { FORMATS } from './domain.js';
 
 export function toUnix(v) {
   if (v == null || v === '') return null;
@@ -208,6 +209,11 @@ export function normaliseBillboardRow(r) {
   // OpenStreetMap tags
   const adv = out.advertising;
   const isShelter = out.highway === 'bus_stop' || out.amenity === 'shelter' || out.shelter === 'yes';
+  if (out.format && !FORMATS[out.format]) {
+    // e.g. billboard-scout's "custom": keep what the file said, use a known format, flag for review
+    out.format_detected = out.format;
+    out.format = null;
+  }
   if (!out.format) {
     if (adv && OSM_FORMAT[adv]) out.format = OSM_FORMAT[adv];
     else if (isShelter) out.format = 'bus_shelter';

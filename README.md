@@ -108,13 +108,18 @@ Billboards can also be imported from **GeoJSON** (e.g. QuickOSM `advertising=*` 
 | PUT | `/api/settings/traffic-source` | `auto` \| `trips` \| `segments` |
 | GET | `/api/analytics/billboards`, `/summary`, `/gaps`, `/flows` | analytics; `hourFrom`/`hourTo` filter by time of day |
 
+## billboard-scout (street-level billboard detection)
+
+[`packages/billboard-scout`](packages/billboard-scout) is a standalone Python library, published separately later. It finds billboards in street-level photos (Mapillary or your own camera) and gives their position, facing, size, format and content. Its GeoJSON output imports straight into the Inventory as "sites that aren't ours". It deliberately doesn't use Google Street View (Google's terms forbid it).
+
 ## Project layout
 
 ```
 server/   Express API, SQLite (node:sqlite), exposure engine, demo-data simulator, tests
 client/   React + Vite + deck.gl + MapLibre (CARTO / Esri base maps)
 samples/  example upload files (trips, billboards CSV/GeoJSON, road volumes)
-docs/     QGIS guide
+docs/     QGIS guide, data-sources register
+packages/billboard-scout/   Python library: billboards from street-level imagery
 ```
 
 ## Roadmap — suggested next steps
