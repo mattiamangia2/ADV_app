@@ -14,6 +14,20 @@ Map controls: drag to move, mouse wheel to zoom, **wheel-click drag (or right-dr
 
 ## Quick start
 
+### New computer (one step)
+
+1. Install **Node.js LTS** (22.5+) from nodejs.org and **Git** from git-scm.com.
+2. Get the code: `git clone -b ccr-76c3af1e-14g790 https://github.com/mattiamangia2/ADV_app.git` then `cd ADV_app`.
+3. Run the setup:
+   - **Windows:** double-click `setup.cmd`, or run `setup` in the terminal
+   - **macOS / Linux:** `./setup.sh`
+   - add `--python` to also install the billboard-scout library (needs Python 3.10+)
+4. Start: `npm run dev` (on Windows `npm.cmd run dev` if PowerShell blocks `npm`), then open http://localhost:5173.
+
+The setup checks the requirements, installs everything and tells you what's missing. It's safe to run again after `git pull`.
+
+### Manually
+
 Requires Node.js ≥ 22.5 (uses the built-in `node:sqlite`, so there are no native dependencies).
 
 ```bash

@@ -14,7 +14,8 @@
     "seed": "npm run seed -w server",
     "test": "npm test -w server",
     "prepare": "node scripts/install-hooks.mjs",
-    "check-secrets": "node scripts/check-secrets.mjs --all"
+    "check-secrets": "node scripts/check-secrets.mjs --all",
+    "setup": "node scripts/setup.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
