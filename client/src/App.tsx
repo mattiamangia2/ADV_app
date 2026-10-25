@@ -23,7 +23,16 @@ export default function App() {
   const [err, setErr] = useState<string | null>(null);
 
   const reloadCompanies = useCallback(() => { api.companies().then(setCompanies).catch((e) => setErr(e.message)); }, []);
-  useEffect(() => { api.meta().then(setMeta).catch((e) => setErr(e.message)); reloadCompanies(); }, [reloadCompanies]);
+  // Keep trying until the server is up (on the first start it prepares demo data for a minute or two).
+  useEffect(() => {
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tryLoad = () => api.meta()
+      .then((m) => { if (stop) return; setErr(null); setMeta(m); reloadCompanies(); })
+      .catch((e) => { if (stop) return; setErr(e.message); timer = setTimeout(tryLoad, 3000); });
+    tryLoad();
+    return () => { stop = true; clearTimeout(timer); };
+  }, [reloadCompanies]);
   useEffect(() => store('tab', tab), [tab]);
   useEffect(() => store('companyId', String(companyId ?? '')), [companyId]);
 
@@ -37,7 +46,16 @@ export default function App() {
     } catch (e) { alert((e as Error).message); }
   };
 
-  if (err) return <div className="page error">Cannot reach the API: {err}. Is the server running (npm run dev)?</div>;
+  if (err && !meta) {
+    const preparing = /preparing/i.test(err);
+    return (
+      <div className="page">
+        <h2>{preparing ? 'Preparing data…' : 'Starting the server…'}</h2>
+        <p className="hint">{preparing ? err : 'Waiting for the server. If this lasts more than a minute, check the terminal running "npm run dev".'}</p>
+        <p className="hint">This page retries by itself every few seconds.</p>
+      </div>
+    );
+  }
   if (!meta) return <div className="page hint">Loading…</div>;
   const ctx: Ctx = { meta, companies, companyId, reloadCompanies, version, bump: () => setVersion((v) => v + 1) };
 

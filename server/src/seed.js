@@ -165,11 +165,13 @@ function demandZones(net, rand) {
   return zones;
 }
 
-export function simulateTrips(net, rand, { count = 2500, days = 7, startDate = '2026-10-05' } = {}) {
+export async function simulateTrips(net, rand, { count = 2500, days = 7, startDate = '2026-10-05' } = {}) {
   const trips = [];
   const base = Date.parse(`${startDate}T00:00:00+02:00`) / 1000;
   const zones = demandZones(net, rand);
   for (let n = 0; n < count; n++) {
+    // let the server answer requests ("preparing…") while this heavy loop runs
+    if (n % 25 === 0) await new Promise((r) => setImmediate(r));
     const day = Math.floor(rand() * days);
     const weekend = day >= 5;
     const hour = weekend ? 9 + Math.floor(rand() * 12) : pickWeighted(rand, HOURLY);
@@ -276,7 +278,7 @@ function offRoadPoint(net, rand, minDist = 220) {
 export async function seed(db, { seedValue = 42, tripCount = 2500, useOsm = true, log = console.log } = {}) {
   const rand = rng(seedValue);
   const net = await loadNetwork(rand, { useOsm, log });
-  const trips = simulateTrips(net, rand, { count: tripCount });
+  const trips = await simulateTrips(net, rand, { count: tripCount });
   db.exec('BEGIN');
   for (const t of trips) insert(db, 'trips', t);
 

@@ -40,7 +40,7 @@ export async function downloadRoads(bbox = MILAN_BBOX, { log = console.log } = {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'ADV-Flow/0.1 (demo data)' },
         body: 'data=' + encodeURIComponent(q),
-        signal: AbortSignal.timeout(200_000),
+        signal: AbortSignal.timeout(90_000),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
